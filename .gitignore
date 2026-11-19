@@ -1,0 +1,7 @@
+node_modules
+dist
+*.tsproj
+*.log
+.DS_Store
+tests/fixtures/*
+!tests/fixtures/README.md
