@@ -13,7 +13,7 @@ export function Splash({ boot, leaving }: { boot: BootState; leaving: boolean })
         {boot.fatal ? (
           <>
             <p className="splash-err"><Icon name="alert" /> {boot.fatal}</p>
-            <button className="btn primary" onClick={boot.retry}><Icon name="replace" /><span>Try again</span></button>
+            <button className="btn btn-primary btn-md" onClick={boot.retry}><Icon name="replace" size={16} />Try again</button>
           </>
         ) : (
           <>

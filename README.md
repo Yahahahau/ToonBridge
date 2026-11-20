@@ -32,6 +32,10 @@ If you animate in Adobe Animate (formerly Flash) and want to continue in ToonSqu
 
 Older binary `.fla` files aren't supported yet. In Animate, use *File ▸ Save As ▸ Animate Uncompressed Document (.xfl)* and zip the folder.
 
+## The app
+
+A GitHub-style workspace in ToonBridge's mint-teal identity: header (theme menu, settings, source link), a sidebar with **Convert**, **Conversion history**, **Settings** and **About**, and a Convert page with *Overview / Project details / Report* tabs. Light and dark themes (or *Match system*) come from one set of design tokens. History stores only names, dates and results in this browser; converted files can be re-downloaded during the same visit. Settings hold the default skew mode, seam hiding and whether to keep history.
+
 ## Reliability
 
 ToonSquid's file format isn't publicly documented, so everything here is derived from real files made by the app. The status of each part is stated plainly:

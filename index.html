@@ -5,8 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <title>ToonBridge — Animate to ToonSquid converter</title>
     <meta name="description" content="Convert Adobe Animate (XFL) projects into ToonSquid .tsproj files, right in your browser. Nothing is uploaded." />
-    <meta name="theme-color" content="#01caa8" media="(prefers-color-scheme: light)" />
-    <meta name="theme-color" content="#0c1f1b" media="(prefers-color-scheme: dark)" />
+    <meta name="theme-color" content="#f7f9f8" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#0e1413" media="(prefers-color-scheme: dark)" />
     <meta name="color-scheme" content="light dark" />
 
     <!-- Favicons: SVG first, PNG + ICO fallbacks. Paths are relative so they work under a sub-path (GitHub Pages) or at the root (Netlify). -->
@@ -25,9 +25,14 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <link rel="manifest" href="/manifest.webmanifest" />
     <style>
-      html { background: #eefbf6; }
-      @media (prefers-color-scheme: dark) { html { background: #0c1f1b; } }
+      html { background: #f7f9f8; }
+      @media (prefers-color-scheme: dark) { html:not([data-theme="light"]) { background: #0e1413; } }
+      html[data-theme="dark"] { background: #0e1413; }
     </style>
+    <script>
+      /* Apply the saved theme before first paint (no flash). Same key as src/state/theme.ts. */
+      try { var t = JSON.parse(localStorage.getItem('toonbridge.theme') || '"system"'); if (t === 'light' || t === 'dark') document.documentElement.setAttribute('data-theme', t); } catch (e) {}
+    </script>
   </head>
   <body>
     <div id="root"></div>
