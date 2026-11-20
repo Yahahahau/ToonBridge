@@ -47,6 +47,7 @@ ToonSquid's file format isn't publicly documented, so everything here is derived
 **Safeguards built into the converter** (each one is reported when it fires):
 - *Tween guard*: every baked motion tween must land exactly (≤ 0.05 px) on both of its keyframes; if the model can't reproduce one, the tween is held at its start keyframe instead of producing a jumping in-between.
 - *Symbol-swap tweens* are held (below).
+- *Movie clip continuity*: a movie clip that stays on its layer across several keyframes (same symbol) keeps playing from where it was, like the same instance in Animate, instead of restarting at every keyframe (that restart made `retry brain loop movie` and BF's miss overlays stutter).
 - *Blend isolation*: a symbol whose own content uses blend modes is written as an isolated group (ToonSquid **Normal**, `bM 0`) instead of the default **Pass Through**, so its blends stay inside the symbol. Without this, BF's miss poses (Hard Light layers) blended against the white Background and came out washed-out lavender.
 - *Verified encoding first*: skew is **baked into the paths** by default (exact geometry); the Perspective-effect mode stays available but is marked experimental.
 

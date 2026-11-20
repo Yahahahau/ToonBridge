@@ -116,7 +116,7 @@ function parseInstance(n: XNode, diag: Diagnostics): InstanceEl | null {
     };
   }
   const filters = parseFilters(child(n, 'filters'));
-  if (symbolType === 'movie clip') diag.approx('XFL_MOVIECLIP', 'Movie clip instances are treated like looping graphics from frame 1 (independent playback is not modelled)');
+  if (symbolType === 'movie clip') diag.approx('XFL_MOVIECLIP', 'Movie clip instances play as looping symbols from the frame they first appear on their layer (scripts and independent timing are not modelled)');
   if (symbolType === 'button') diag.approx('XFL_BUTTON', 'Button instances are frozen at their Up state (frame 1)');
   return {
     type: 'instance', lib, symbolType, matrix: parseMatrix(child(n, 'matrix')) ?? IDENTITY, tp, loop,

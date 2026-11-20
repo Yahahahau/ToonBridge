@@ -221,6 +221,24 @@ export class Resolver {
     return v;
   }
 
+  /**
+   * First frame of the uninterrupted run of keyframes in which this movie clip (same symbol, same position among that
+   * symbol's instances in the keyframe) is on the layer. Its playhead counts from there.
+   */
+  private movieClipRunStart(layer: Layer, idx: number, e: InstanceEl): number {
+    const ord = (fr: Frame, el: InstanceEl) => fr.elements.filter((x) => x.type === 'instance' && x.lib === el.lib && x.symbolType === 'movie clip').indexOf(el);
+    const k = ord(layer.frames[idx], e);
+    let i = idx;
+    while (i > 0) {
+      const prev = layer.frames[i - 1], cur = layer.frames[i];
+      if (prev.index + prev.duration !== cur.index) break;
+      const same = prev.elements.filter((x) => x.type === 'instance' && x.lib === e.lib && x.symbolType === 'movie clip');
+      if (same.length <= k) break;
+      i--;
+    }
+    return layer.frames[i].index;
+  }
+
   private resolveFrame(layer: Layer, j: number, preH: number): ResolvedEl[] | null {
     const A: Matrix | null = preH ? shearMatrix(preH) : null;
     const eff = (m: Matrix): Matrix => (A ? compose(A, m) : m);
@@ -252,7 +270,11 @@ export class Resolver {
       const sym = this.doc.symbols.get(e.lib);
       if (!sym) { this.diag.loss('SYMBOL_UNRESOLVED', `Instance of unknown symbol "${e.lib}" skipped`); continue; }
       const len = Math.max(1, timelineLength(sym.timeline));
-      const symFrame = this.symbolFrame(e, offset, len);
+      // Movie clips keep playing across consecutive keyframes (same symbol, same layer = the same instance in Animate);
+      // restarting them at every keyframe made loops like "retry brain loop movie" jump back and stutter.
+      const mcStart = e.symbolType === 'movie clip' ? this.movieClipRunStart(layer, idx, e) : f.index;
+      if (mcStart !== f.index) this.diag.info('MOVIECLIP_CONTINUOUS', 'Movie clips spanning several keyframes keep playing continuously (not restarted at each keyframe)', 1);
+      const symFrame = this.symbolFrame(e, j - mcStart, len);
       const Me = eff(e.matrix);
       const dec = decompose(Me);
       const h = this.shearOf(dec.h);
