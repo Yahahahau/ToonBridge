@@ -36,7 +36,7 @@ export interface EffectPlan { effects: PlannedEffect[]; losses: string[]; approx
  * ToonSquid effects whose file encoding has been observed in an app-made .tsproj. Only these are written.
  * Everything else is planned and reported, but not written (no guessing the file format).
  */
-export const ENCODED = new Set<string>(['perspective']);
+export const ENCODED = new Set<string>(['perspective', 'gaussianBlur', 'adjustments', 'dropShadow']);
 
 /**
  * Animate's blur is a box blur of `size` px applied `quality` times (1 = low, 2 = medium, 3 = high ~ Gaussian).
@@ -52,7 +52,8 @@ const r2 = (n: number) => Math.round(n * 100) / 100;
 function blurRadius(bx: number, by: number, q: number, what: string, approx: string[]): number {
   const sx = boxBlurSigma(bx, q), sy = boxBlurSigma(by, q);
   if (Math.abs(sx - sy) > 0.5) approx.push(`${what}: Animate blurs X and Y separately (${bx}×${by}); ToonSquid has one radius, so the larger is used`);
-  return r2(Math.max(sx, sy));
+  // ToonSquid's radius is "in pixels"; we use 2σ (≈ the visible reach of a Gaussian). Calibrate against a render if needed.
+  return r2(2 * Math.max(sx, sy));
 }
 
 export function planFilters(filters: AnimateFilter[]): EffectPlan {
@@ -71,6 +72,7 @@ export function planFilters(filters: AnimateFilter[]): EffectPlan {
         if (f.knockout || f.hideObject) approx.push('Drop Shadow "Knockout"/"Hide object" not available in ToonSquid (shadow drawn under the object instead)');
         const a = (f.angle * Math.PI) / 180;   // Animate: angle measured clockwise from +x on screen (y down)
         const color = { ...f.color, a: Math.min(1, f.color.a * Math.min(f.strength, 1)) };
+        if (color.a < 0.999) approx.push('Drop Shadow opacity/strength below 100%: ToonSquid shadow colour has no alpha (drawn fully opaque)');
         if (f.strength > 1) approx.push(`Drop Shadow strength ${Math.round(f.strength * 100)}% > 100% cannot be matched (clamped)`);
         effects.push({ kind: 'dropShadow', radius: blurRadius(f.blurX, f.blurY, f.quality, 'Drop Shadow', approx), offsetX: r2(f.distance * Math.cos(a)), offsetY: r2(f.distance * Math.sin(a)), color, inGlobalSpace: false, note: 'distance/angle -> offset X/Y' });
         break;
@@ -79,6 +81,7 @@ export function planFilters(filters: AnimateFilter[]): EffectPlan {
         if (f.inner) { losses.push('Glow with "Inner glow" has no ToonSquid equivalent'); break; }
         if (f.knockout) approx.push('Glow "Knockout" not available in ToonSquid');
         const color = { ...f.color, a: Math.min(1, f.color.a * Math.min(f.strength, 1)) };
+        if (color.a < 0.999) approx.push('Glow opacity/strength below 100%: ToonSquid shadow colour has no alpha (drawn fully opaque)');
         if (f.strength > 1) approx.push(`Glow strength ${Math.round(f.strength * 100)}% > 100% cannot be matched (clamped)`);
         // An outer glow is a shadow with no offset.
         effects.push({ kind: 'dropShadow', radius: blurRadius(f.blurX, f.blurY, f.quality, 'Glow', approx), offsetX: 0, offsetY: 0, color, inGlobalSpace: false, note: 'Glow -> Drop Shadow with zero offset' });
@@ -115,5 +118,28 @@ export const BLEND_MAP: Record<string, string | null> = {
   invert: null, alpha: null, erase: null,
 };
 
-/** ToonSquid `bM` integers. Only Normal (field omitted) is certain; the others have not been decoded yet. */
-export const BLEND_CODE: Record<string, number | undefined> = { Normal: undefined };
+/**
+ * ToonSquid `bM` integers = position in ToonSquid's blend-mode list (0 = Normal, field omitted).
+ * Decoded from an app-made file (Effect.tsproj): Darken 2, Multiply 3, Lighten 7, Screen 8, Add 10, Overlay 12,
+ * Hard Light 14, Difference 19, Subtract 21 - all equal to the list index, so the rest of the list follows the same rule.
+ */
+export const TS_BLEND_MODES = ['Normal', 'Pass Through', 'Darken', 'Multiply', 'Color Burn', 'Linear Burn', 'Darker Color', 'Lighten', 'Screen', 'Color Dodge', 'Add', 'Lighter Color', 'Overlay', 'Soft Light', 'Hard Light', 'Vivid Light', 'Linear Light', 'Pin Light', 'Hard Mix', 'Difference', 'Exclusion', 'Subtract', 'Divide', 'Hue', 'Saturation', 'Color', 'Luminosity'] as const;
+export const BLEND_CODE: Record<string, number | undefined> = Object.fromEntries(TS_BLEND_MODES.map((m, i) => [m, i === 0 ? undefined : i]));
+/** Animate blend mode -> ToonSquid bM (undefined = Normal / omit, null = no equivalent). */
+export function blendCode(animate: string): number | undefined | null {
+  const ts = BLEND_MAP[animate];
+  if (ts === null) return null;
+  if (ts === undefined) return null;
+  return BLEND_CODE[ts];
+}
+
+/** Planned effects -> the exact rows ToonSquid stores (types 100/101/104). Values per the decoded file. */
+export function toTSEffects(planned: PlannedEffect[]): import('../resolver/model').TSEffect[] {
+  return planned.map((e) => {
+    switch (e.kind) {
+      case 'gaussianBlur': return { kind: 'gaussianBlur', r: e.radius };
+      case 'dropShadow': return { kind: 'dropShadow', r: e.radius, os: [e.offsetX, e.offsetY], c: { r: e.color.r, g: e.color.g, b: e.color.b } };
+      case 'adjustments': return { kind: 'adjustments', h: r2(e.hue) / 100, s: r2(e.saturation) / 100, b: r2(e.brightness) / 100, c: r2(e.contrast) / 100 };
+    }
+  });
+}

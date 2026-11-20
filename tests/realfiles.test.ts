@@ -10,6 +10,7 @@ const dir = process.env.A2T_FIXTURES;
 const fla = dir && join(dir, 'Boyfriend_But_Better.fla');
 const base = dir && join(dir, '00_baseline.tsproj');
 const persp = dir && join(dir, 'Perspective_revert_engineer.tsproj');
+const fxProbe = dir && join(dir, 'Effect.tsproj');
 const have = !!fla && existsSync(fla);
 const dec = new TextDecoder();
 
@@ -52,10 +53,10 @@ describe.skipIf(!have)('real Boyfriend_But_Better.fla (XFL, damaged central dire
     const SQL = await nodeSql();
     const ours = keySets(convertAnalysis(analyzeInput(new Uint8Array(readFileSync(fla!)), 'bf.fla'), SQL).bytes, SQL);
     const theirs = keySets(new Uint8Array(readFileSync(base!)), SQL);
-    if (persp && existsSync(persp)) for (const [k, set] of keySets(new Uint8Array(readFileSync(persp)), SQL)) { const t = theirs.get(k) ?? new Set<string>(); set.forEach((x) => t.add(x)); theirs.set(k, t); }
+    for (const extra of [persp, fxProbe]) if (extra && existsSync(extra)) for (const [k, set] of keySets(new Uint8Array(readFileSync(extra)), SQL)) { const t = theirs.get(k) ?? new Set<string>(); set.forEach((x) => t.add(x)); theirs.set(k, t); }
     const unknown: string[] = [];
     for (const [k, set] of ours) for (const key of set) if (!theirs.get(k)?.has(key)) unknown.push(`${k}.${key}`);
-    // Known extrapolation (documented in README): Ef on vector (type 1) layers was only observed on shape (type 3) layers.
-    expect(unknown.filter((u) => u !== 'layer1.Ef')).toEqual([]);
+    // Known extrapolations (documented in README): Ef was only observed on shape (type 3) layers, bM on shape/vector layers.
+    expect(unknown.filter((u) => !['layer1.Ef', 'layer4.Ef', 'layer4.bM'].includes(u))).toEqual([]);
   });
 });

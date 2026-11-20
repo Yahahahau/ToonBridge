@@ -2,7 +2,7 @@
 import type { Database, SqlJsStatic } from 'sql.js';
 import type { Contour } from '../geometry/contours';
 import type { RGBA } from '../ir';
-import type { Content, TSClip, TSProject, VectorItem } from '../resolver/model';
+import type { Content, TSClip, TSEffect, TSProject, VectorItem } from '../resolver/model';
 import { FIXED_DATE, rnd, uuid5 } from '../util';
 import { writeZipStored, type ZipFile } from '../zip/writer';
 import { ANIM_SCHEMA, DATA_SCHEMA, LT } from './schema';
@@ -37,6 +37,20 @@ function itemJson(it: VectorItem) {
 }
 
 const effectId = (layerId: string) => uuid5(`${layerId}|EF-PERSPECTIVE`);
+const fxId = (layerId: string, i: number, kind: string) => uuid5(`${layerId}|EF-${i}-${kind}`);
+const FX_ROW: Record<TSEffect['kind'], { type: number; name: string }> = {
+  gaussianBlur: { type: LT.FX_BLUR, name: 'Gaussian Blur' },
+  dropShadow: { type: LT.FX_SHADOW, name: 'Drop Shadow' },
+  adjustments: { type: LT.FX_ADJUST, name: 'Adjustments' },
+};
+/** Effect row fields exactly as an app-made file stores them (Effect.tsproj): blur {r}, shadow {r, os, c}, adjustments {h, s, b, c}. */
+function fxFields(e: TSEffect): Record<string, unknown> {
+  if (e.kind === 'gaussianBlur') return { r: rnd(e.r) };
+  if (e.kind === 'dropShadow') return { r: rnd(e.r), os: [rnd(e.os[0]), rnd(e.os[1])], c: { r: rnd(e.c.r), g: rnd(e.c.g), b: rnd(e.c.b) } };
+  const o: Record<string, unknown> = {};
+  for (const k of ['h', 's', 'b', 'c'] as const) if (e[k] !== 0) o[k] = rnd(e[k]);
+  return o;
+}
 
 function contentLayer(id: string, drawingId: string, c: Content): { type: number; data: Record<string, unknown> } {
   if (c.kind === 'vector') {
@@ -50,6 +64,8 @@ function contentLayer(id: string, drawingId: string, c: Content): { type: number
   if (Math.abs(r.sx - 1) > 1e-9 || Math.abs(r.sy - 1) > 1e-9) tf.s = [rnd(r.sx), rnd(r.sy)];
   const d: Record<string, unknown> = { cl: { v: 1, id: r.clipId }, Id: id, V: 3, Na: r.name, DI: drawingId, LD: FIXED_DATE, tf, v: 2 };
   if (Math.abs(r.alpha - 1) > 1e-9) d.op = rnd(r.alpha);
+  if (r.blend !== undefined) d.bM = r.blend;
+  if (r.effects?.length) d.Ef = r.effects.map((e, i) => fxId(id, i, e.kind));
   return { type: LT.CLIP, data: d };
 }
 
@@ -75,6 +91,12 @@ function writeAnim(SQL: SqlJsStatic, p: TSProject, clip: TSClip): Uint8Array {
           const e = c.c.effect.c;
           const eid = effectId(c.id);
           insL.run([eid, LT.EFFECT, blob({ LI: c.id, Na: 'Perspective', Id: eid, V: 3, LD: FIXED_DATE, c0: pt6(e[0]), c1: pt6(e[1]), c2: pt6(e[2]), c3: pt6(e[3]) })]);
+        }
+        if (c.c.kind === 'clip' && c.c.ref.effects?.length) {
+          c.c.ref.effects.forEach((e, i) => {
+            const eid = fxId(c.id, i, e.kind);
+            insL.run([eid, FX_ROW[e.kind].type, blob({ LI: c.id, Na: FX_ROW[e.kind].name, Id: eid, V: 3, LD: FIXED_DATE, ...fxFields(e) })]);
+          });
         }
       }
     }

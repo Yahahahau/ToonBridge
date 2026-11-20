@@ -7,13 +7,13 @@ import { contoursBounds } from '../geometry/bounds';
 import { shearEffect } from '../geometry/perspective';
 import type { Contour } from '../geometry/contours';
 import { CoverIndex, coveredChains } from '../geometry/cover';
-import { BLEND_CODE, BLEND_MAP, ENCODED, planColor, planFilters } from '../effects/plan';
+import { blendCode, planColor, planFilters, toTSEffects, TS_BLEND_MODES, type PlannedEffect } from '../effects/plan';
 import { Diagnostics } from '../diagnostics';
 import { chainToContour, fillContours, seamContours, strokeContours, usedFillIds, usedStrokeIds } from '../geometry/contours';
 import { hex, rnd, sha1, uuid5 } from '../util';
-import type { Content, TSClip, TSDrawing, TSLayer, TSProject } from './model';
+import type { Content, TSClip, TSDrawing, TSEffect, TSLayer, TSProject } from './model';
 
-interface InstState { lib: string; pv: [number, number]; p: [number, number]; rot: number; sx: number; sy: number; h: number; alpha: number; symFrame: number; blend: string; }
+interface InstState { lib: string; pv: [number, number]; p: [number, number]; rot: number; sx: number; sy: number; h: number; alpha: number; symFrame: number; blend: string; bm?: number; fx: TSEffect[]; }
 
 /** How skew (shear) in instance matrices is handled. ToonSquid transforms have no skew. */
 export type SkewMode = 'perspective' | 'bake' | 'off';
@@ -137,11 +137,23 @@ export class Resolver {
     if (this.clips.has(id)) return id;
     if (this.building.has(id)) { this.diag.loss('SYMBOL_CYCLE', `Recursive symbol reference to "${sym.name}" skipped`); return null; }
     this.building.add(id);
-    const name = (stat ? sym.name : `${sym.name} @${symFrame + 1}`) + (h ? ` [skew ${rnd(h)}]` : '');
+    const name = this.cleanName(sym.name);
     this.buildClip(id, name, sym.timeline, [stat ? 0 : symFrame], false, h);
     this.building.delete(id);
     this.stats.symbolClips++;
     return id;
+  }
+
+  private nameCount = new Map<string, number>();
+  /**
+   * Library names as a person would write them: the symbol's own name (without Animate library folders), and
+   * "name 2", "name 3", ... for further snapshots/skew variants of the same symbol. No "@frame" or "[skew …]" tags.
+   */
+  private cleanName(libName: string): string {
+    const base = (libName.split('/').pop() || libName).replace(/\s+/g, ' ').trim() || 'Symbol';
+    const n = (this.nameCount.get(base) ?? 0) + 1;
+    this.nameCount.set(base, n);
+    return n === 1 ? base : `${base} ${n}`;
   }
 
   // ---------- clip building ----------
@@ -205,7 +217,13 @@ export class Resolver {
       if (f.tween.kind === 'motion') {
         const starts = f.elements.filter((e) => e.type === 'instance');
         const ends = nextKey && nextKey.index === f.index + f.duration ? nextKey.elements.filter((e) => e.type === 'instance') : [];
-        if (starts.length === 1 && ends.length === 1 && f.elements.length === 1) tweenEnd = ends[0] as InstanceEl;
+        if (starts.length === 1 && ends.length === 1 && f.elements.length === 1) {
+          const s0 = starts[0] as InstanceEl, e1 = ends[0] as InstanceEl;
+          // Interpolating between DIFFERENT symbols mixes two unrelated registration points and throws the art off
+          // (the frame-2 jump in BF NOTE LEFT/UP/DOWN). Hold the start keyframe instead, like the reference render.
+          if (s0.lib === e1.lib) tweenEnd = e1;
+          else this.diag.approx('TWEEN_SYMBOL_SWAP', 'Motion tween between two different symbols: held at the start keyframe (no interpolation)', 1);
+        }
         else this.diag.approx('TWEEN_UNPAIRED', 'Motion tween without a single instance at both keyframes: held at the start keyframe', 1);
       } else if (f.tween.kind === 'shape') {
         this.diag.loss('TWEEN_SHAPE', 'Shape tweens are not supported (held at the start keyframe)', 1);
@@ -220,10 +238,10 @@ export class Resolver {
       const Me = eff(e.matrix);
       const dec = decompose(Me);
       const h = this.shearOf(dec.h);
-      this.reportEffects(e);
+      const fxw = this.instanceEffects(e);
       let st: InstState = {
         lib: e.lib, pv: [e.tp[0], e.tp[1]], p: apply(Me, e.tp), rot: dec.rot, sx: dec.sx, sy: dec.sy, h,
-        alpha: e.alpha, symFrame, blend: e.blend,
+        alpha: e.alpha, symFrame, blend: e.blend, bm: fxw.bm, fx: fxw.fx,
       };
       if (tweenEnd && f.tween) {
         const t = easeT(offset / f.duration, f.tween.ease);
@@ -245,7 +263,7 @@ export class Resolver {
         this.diag.approx('TWEEN_BAKED', 'Motion tweens are baked per frame; easing model p=t+e·t(1−t) is unverified against Animate output', 1);
         this.stats.tweenFramesBaked++;
       }
-      const sig = `I${e.lib}|${rnd(st.pv[0])},${rnd(st.pv[1])}|${rnd(st.p[0])},${rnd(st.p[1])}|${rnd(st.rot)}|${rnd(st.sx)},${rnd(st.sy)}|h${rnd(st.h)}|${rnd(st.alpha)}|${this.frameKey(sym, st.symFrame, st.h)}`;
+      const sig = `I${e.lib}|${rnd(st.pv[0])},${rnd(st.pv[1])}|${rnd(st.p[0])},${rnd(st.p[1])}|${rnd(st.rot)}|${rnd(st.sx)},${rnd(st.sy)}|h${rnd(st.h)}|${rnd(st.alpha)}|${this.frameKey(sym, st.symFrame, st.h)}|b${st.bm ?? ''}|${JSON.stringify(st.fx)}`;
       out.push({ sig, inst: st });
     }
     return out;
@@ -276,7 +294,7 @@ export class Resolver {
           const sym = this.doc.symbols.get(el.inst.lib)!;
           const target = this.clipFor(sym, el.inst.symFrame, el.inst.h);
           if (target) {
-            content.push({ id: cid, c: { kind: 'clip', ref: { clipId: target, pv: [el.inst.pv[0] + el.inst.h * el.inst.pv[1], el.inst.pv[1]], p: el.inst.p, rot: el.inst.rot, sx: el.inst.sx, sy: el.inst.sy, alpha: el.inst.alpha, name: el.inst.lib } } });
+            content.push({ id: cid, c: { kind: 'clip', ref: { clipId: target, pv: [el.inst.pv[0] + el.inst.h * el.inst.pv[1], el.inst.pv[1]], p: el.inst.p, rot: el.inst.rot, sx: el.inst.sx, sy: el.inst.sy, alpha: el.inst.alpha, name: el.inst.lib, blend: el.inst.bm, effects: el.inst.fx.length ? el.inst.fx : undefined } } });
             this.stats.clipLayers++;
           }
         }
@@ -297,26 +315,26 @@ export class Resolver {
   }
 
   /**
-   * Filters, colour effects and blend modes of an instance (see effects/plan.ts). Each is mapped to its ToonSquid
-   * counterpart; it is only WRITTEN when that effect's file encoding has been seen in an app-made file. Otherwise the
-   * report says exactly what it would become, so nothing is dropped silently.
+   * Filters, colour effects and blend mode of an instance (see effects/plan.ts), turned into the effect rows and bM value
+   * ToonSquid stores (decoded from an app-made file). Anything without an equivalent is reported, never dropped silently.
    */
-  private reportEffects(e: InstanceEl): void {
-    const label: Record<string, string> = { gaussianBlur: 'Gaussian Blur', adjustments: 'Adjustments', dropShadow: 'Drop Shadow' };
+  private instanceEffects(e: InstanceEl): { fx: TSEffect[]; bm?: number } {
+    const planned: PlannedEffect[] = [];
     for (const plan of [planFilters(e.filters), planColor(e.colorFx)]) {
-      for (const fx of plan.effects) {
-        if (ENCODED.has(fx.kind)) continue;
-        this.diag.loss(`FX_PENDING_${fx.kind}`, `${fx.note}: maps to ToonSquid "${label[fx.kind]}", not written yet (its file encoding has not been seen in an app-made .tsproj)`, 1);
-      }
+      planned.push(...plan.effects);
       for (const l of plan.losses) this.diag.loss('FX_NO_EQUIVALENT', l, 1);
       for (const a of plan.approx) this.diag.approx('FX_APPROX', a, 1);
     }
+    const fx = toTSEffects(planned);
+    if (fx.length) this.diag.info('FX_WRITTEN', `Animate filters written as ToonSquid effects on the symbol layer (${[...new Set(planned.map((p) => p.kind))].join(', ')}). Effect on symbol layers is inferred from effects on shape layers`, 1);
+    let bm: number | undefined;
     if (e.blend !== 'normal') {
-      const ts = BLEND_MAP[e.blend];
-      if (ts === undefined || ts === null) this.diag.loss('BLEND_NO_EQUIVALENT', `Blend mode "${e.blend}" has no ToonSquid equivalent`, 1);
-      else if (ts === 'Normal') this.diag.approx('BLEND_LAYER', `Blend mode "${e.blend}" -> ToonSquid Normal`, 1);
-      else if (BLEND_CODE[ts] === undefined) this.diag.loss('BLEND_PENDING', `Blend mode "${e.blend}" maps to ToonSquid "${ts}", not written yet (the bM number for "${ts}" has not been decoded)`, 1);
+      const code = blendCode(e.blend);
+      if (code === null) this.diag.loss('BLEND_NO_EQUIVALENT', `Blend mode "${e.blend}" has no ToonSquid equivalent`, 1);
+      else if (code === undefined) this.diag.approx('BLEND_LAYER', `Blend mode "${e.blend}" -> ToonSquid Normal`, 1);
+      else { bm = code; this.diag.info('BLEND_WRITTEN', `Blend mode "${e.blend}" written as ToonSquid "${TS_BLEND_MODES[code]}" (bM ${code})`, 1); }
     }
+    return { fx, bm };
   }
 
   /** Applies the skew policy to a raw shear factor; returns the shear that will be written (0 = none). */

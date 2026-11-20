@@ -18,4 +18,6 @@ export const ANIM_SCHEMA: Record<string, string> = {
 };
 
 /** Layer type ids observed in app-made files. */
-export const LT = { VECTOR: 1, CLIP: 4, TIMELINE: 10, BACKGROUND: 11, EFFECT: 121 } as const;
+/** Layer row types. Effect rows (decoded from app-made files): 100 Gaussian Blur, 101 Drop Shadow, 104 Adjustments, 121 Perspective. */
+export const LT = { VECTOR: 1, CLIP: 4, TIMELINE: 10, BACKGROUND: 11, EFFECT: 121, FX_BLUR: 100, FX_SHADOW: 101, FX_ADJUST: 104 } as const;
+export const EFFECT_TYPES: ReadonlySet<number> = new Set([LT.EFFECT, LT.FX_BLUR, LT.FX_SHADOW, LT.FX_ADJUST]);

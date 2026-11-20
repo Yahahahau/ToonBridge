@@ -40,9 +40,13 @@ ToonSquid's file format isn't publicly documented, so everything here is derived
 | --- | --- |
 | **Structure-verified** (matches app-made files and is re-checked by the validator) | ZIP/SQLite structure and schemas, vector node layout, frame ranges, layer/drawing/clip references |
 | **Experimental** (inferred, not yet confirmed inside ToonSquid) | Clip-instance transforms, motion-tween easing, z-order, stroke `jS/cS`, symbol playback (frames are snapshotted instead), **skew via the Perspective effect**, **seam hiding**, and — most importantly — **opening a generated file in the app** |
-| **Not converted** (always reported) | Blend modes and filters (mapped and reported, see [Filters & effects](#filters--effects-animate-vs-toonsquid)), masks, gradient/bitmap fills, text, audio/video, shape tweens, tint/advanced colour effects, binary FLA |
+| **Not converted** (always reported) | Inner shadows/glows, bevels, tint/advanced colour effects, Invert/Alpha/Erase blends (see [Filters & effects](#filters--effects-animate-vs-toonsquid)), masks, gradient/bitmap fills, text, audio/video, shape tweens, tint/advanced colour effects, binary FLA |
 
 **Skew.** ToonSquid has no skew in its transform, so skewed instances are converted with its *Perspective* effect (layer type 121 + corner offsets), whose layout was decoded from an app-made sample. Rendering the written file back matches Animate's own matrices (mean error ≈ 7×10⁻⁵, versus 1.8×10⁻² when skew is ignored), but that only proves the encode/decode maths agree — **not** that ToonSquid interprets the effect the same way. Two safer alternatives are available in the UI: *Bake into paths* (exact, larger file) and *Ignore skew*.
+
+**Tweens between different symbols** (a classic tween whose end keyframe holds another symbol, e.g. Animate's auto-made `Tween 13` → `BF sing face ye`) are held at the start keyframe instead of being interpolated: interpolating mixes two unrelated registration points and threw parts of the character out of place for a frame.
+
+**Library names** are the symbol's own name; extra snapshots of the same symbol are `name 2`, `name 3`, …
 
 **Seams.** ToonSquid draws each fill on its own and anti-aliases its edges, so where two colours touch (or a colour meets a black outline on another layer) a hairline of background can show when you zoom in. Animate artwork often also has gaps under 0.5px between the colour layer and the outline. ToonBridge hides both with thin underlay strokes drawn **below** the fills:
 - along edges shared by two fills of one shape (in the darker colour), and
@@ -58,24 +62,26 @@ Other limits: conversion runs on the main thread (big projects freeze the page b
 
 Researched from Adobe's *Graphic filters* / *Applying blend modes* pages and ToonSquid's Handbook (*Effects*, *Blend Modes*). Logic: `src/engine/effects/plan.ts`.
 
-| Adobe Animate | ToonSquid | How it maps | Written? |
+| Adobe Animate | ToonSquid (row in the file) | How it maps | Written? |
 | --- | --- | --- | --- |
-| Blur (Blur X/Y, quality) | Gaussian Blur (radius px) | box blur → σ = √(q·(size²−1)/12); X≠Y uses the larger | not yet: encoding unseen |
-| Adjust Color (brightness, contrast, saturation, hue) | Adjustments (same four) | values copied 1:1 | not yet: encoding unseen |
-| Drop Shadow (blur, distance, angle, colour, strength) | Drop Shadow (radius, offset X/Y, colour) | offset = distance·(cos, sin)(angle); strength → alpha; knockout/hide object approximated | not yet: encoding unseen |
-| Glow (outer) | Drop Shadow with zero offset | as above | not yet: encoding unseen |
+| Blur (Blur X/Y, quality) | Gaussian Blur (type 100, `r`) | box blur → r = 2σ, σ = √(q·(size²−1)/12); X≠Y uses the larger | **yes** |
+| Adjust Color (brightness, contrast, saturation, hue) | Adjustments (type 104, `b c s h` = value ÷ 100) | 1:1 | **yes** |
+| Drop Shadow (blur, distance, angle, colour, strength) | Drop Shadow (type 101, `r`, `os:[x,y]`, `c`) | offset = distance·(cos, sin)(angle); ToonSquid shadow colour has no alpha | **yes** |
+| Glow (outer) | Drop Shadow with `os:[0,0]` | as above | **yes** |
 | Drop Shadow / Glow *inner*, Bevel, Gradient Glow, Gradient Bevel | — | no equivalent | reported as lost |
 | Colour effect: Alpha | layer opacity `op` | 1:1 | **yes** |
-| Colour effect: Brightness | Adjustments brightness | curve differs | not yet |
+| Colour effect: Brightness | Adjustments brightness | curve differs | **yes** (approx.) |
 | Colour effect: Tint, Advanced | — | no equivalent | reported as lost |
-| Blend: Normal, Layer | Normal | 1:1 | **yes** (default) |
-| Blend: Darken, Multiply, Lighten, Screen, Overlay, Hard Light, Difference, Add, Subtract | same names | by name | not yet: `bM` numbers undecoded |
+| Blend: Normal, Layer | Normal (no `bM`) | 1:1 | **yes** |
+| Blend: Darken, Multiply, Lighten, Screen, Overlay, Hard Light, Difference, Add, Subtract | `bM` = 2, 3, 7, 8, 12, 14, 19, 10, 21 | by name; `bM` = index in ToonSquid's blend list | **yes** |
 | Blend: Invert, Alpha, Erase | — (Alpha/Erase are masking in ToonSquid) | no equivalent | reported as lost |
-| Skew (transform) | Perspective effect | R8 | **yes** (experimental) |
+| Skew (transform) | Perspective (type 121) | R8 | **yes** (experimental) |
+
+Encodings were read from an app-made probe file (`scripts/decode-effects.ts`). Filters and blend modes sit on the **symbol layer** (type 4); the probe showed effects on shape layers and `bM` on shape/vector layers, so placing them on symbol layers is an inference: please check in the app. Blur radius scale (2σ) and hue units are not yet calibrated against a render.
 
 ToonSquid also has effects Animate doesn't (Pixelate, Sharpness, Halftone, Noise, Chroma Key, Turbulent Displace, Warp, Mesh, Bones, Stroke, Spin, Parallax, Orient Along Motion Path), so there's nothing to convert into them.
 
-"Not yet" means: the conversion is planned and every occurrence is listed in the report with its target, but nothing is written until the field layout has been read from an app-made `.tsproj` (the project rule: never guess the format). To unlock them, make a small ToonSquid project with one layer per item, named `BM Add`, `BM Hard Light`, `FX Blur`, `FX Adjust`, `FX Shadow`, etc., and run `npx tsx scripts/decode-effects.ts probe.tsproj`.
+
 
 ## Run it locally
 

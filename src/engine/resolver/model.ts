@@ -6,7 +6,12 @@ export type VectorItem =
   | { kind: 'fill'; color: RGBA; contours: Contour[] }
   | { kind: 'stroke'; color: RGBA; width: number; contours: Contour[] };
 
-export interface ClipRef { clipId: string; pv: [number, number]; p: [number, number]; rot: number; sx: number; sy: number; alpha: number; name: string; }
+/** ToonSquid effects written on a symbol layer (row types 100/101/104, fields decoded from an app-made file). */
+export type TSEffect =
+  | { kind: 'gaussianBlur'; r: number }
+  | { kind: 'dropShadow'; r: number; os: [number, number]; c: { r: number; g: number; b: number } }
+  | { kind: 'adjustments'; h: number; s: number; b: number; c: number };
+export interface ClipRef { clipId: string; pv: [number, number]; p: [number, number]; rot: number; sx: number; sy: number; alpha: number; name: string; blend?: number; effects?: TSEffect[]; }
 
 /** ToonSquid Perspective effect: corner displacements c0..c3 = TL, TR, BL, BR (normalised by layer bounds). */
 export interface PerspectiveEffect { c: [[number, number], [number, number], [number, number], [number, number]]; }

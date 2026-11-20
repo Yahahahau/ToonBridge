@@ -22,7 +22,7 @@ export const FEATURES: FeatureStatus[] = [
   { feature: 'Layer and content stacking order (z-order)', level: 'experimental', note: 'Inferred from the Background position in lO and the order of ly.' },
   { feature: 'Strokes', level: 'experimental', note: 'jS/cS use 1/1, the only value seen in samples; their meaning is not decoded.' },
   { feature: 'Opening the file inside ToonSquid', level: 'experimental', note: 'No generated file has been opened in the app yet. Please test it on your device.' },
-  { feature: 'Filters and blend modes', level: 'not-supported', note: 'Each one is mapped to its ToonSquid counterpart (Blur -> Gaussian Blur, Adjust Color -> Adjustments, Drop Shadow/Glow -> Drop Shadow, blend modes by name) and listed in this report, but not written until its file encoding has been read from an app-made project.' },
+  { feature: 'Filters and blend modes', level: 'experimental', note: 'Blur -> Gaussian Blur, Adjust Color -> Adjustments, Drop Shadow/Glow -> Drop Shadow, blend modes by name; row layouts and bM numbers decoded from an app-made file. Placing them on symbol layers is inferred; blur radius scale not calibrated. Inner shadows/glows, bevels, tint and Invert/Alpha/Erase are reported as lost.' },
   { feature: 'Masks, gradient/bitmap fills, text, sound, shape tweens', level: 'not-supported', note: 'Not converted in V1. See the list of losses in this report.' },
   { feature: 'Binary FLA (OLE2)', level: 'not-supported', note: 'Detected and reported, but no reader exists yet (V1).' },
 ];
