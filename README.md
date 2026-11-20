@@ -39,10 +39,16 @@ ToonSquid's file format isn't publicly documented, so everything here is derived
 | Status | What |
 | --- | --- |
 | **Structure-verified** (matches app-made files and is re-checked by the validator) | ZIP/SQLite structure and schemas, vector node layout, frame ranges, layer/drawing/clip references |
-| **Experimental** (inferred, not yet confirmed inside ToonSquid) | Clip-instance transforms, motion-tween easing, z-order, stroke `jS/cS`, symbol playback (frames are snapshotted instead), **skew via the Perspective effect**, and — most importantly — **opening a generated file in the app** |
+| **Experimental** (inferred, not yet confirmed inside ToonSquid) | Clip-instance transforms, motion-tween easing, z-order, stroke `jS/cS`, symbol playback (frames are snapshotted instead), **skew via the Perspective effect**, **seam hiding**, and — most importantly — **opening a generated file in the app** |
 | **Not converted** (always reported) | Blend modes on instances, masks, gradient/bitmap fills, text, filters, audio/video, shape tweens, colour effects other than alpha, binary FLA |
 
 **Skew.** ToonSquid has no skew in its transform, so skewed instances are converted with its *Perspective* effect (layer type 121 + corner offsets), whose layout was decoded from an app-made sample. Rendering the written file back matches Animate's own matrices (mean error ≈ 7×10⁻⁵, versus 1.8×10⁻² when skew is ignored), but that only proves the encode/decode maths agree — **not** that ToonSquid interprets the effect the same way. Two safer alternatives are available in the UI: *Bake into paths* (exact, larger file) and *Ignore skew*.
+
+**Seams.** ToonSquid draws each fill on its own and anti-aliases its edges, so where two colours touch (or a colour meets a black outline on another layer) a hairline of background can show when you zoom in. Animate artwork often also has gaps under 0.5px between the colour layer and the outline. ToonBridge hides both with thin underlay strokes drawn **below** the fills:
+- along edges shared by two fills of one shape (in the darker colour), and
+- along the parts of a fill's outline that are hidden under opaque fills on the layers above it in every frame where it is shown (a 0.5px bleed in the fill's own colour, trimmed at the ends).
+
+Visible edges stay where Animate put them: against an 8× supersampled Animate reference, the only pixels that change are the seams and those sub-pixel gaps. Hiding is on by default and can be switched off in the UI (*Hide hairline seams*). It makes files bigger (Boyfriend: 78 → 97 MB).
 
 Other limits: conversion runs on the main thread (big projects freeze the page briefly), and output can be large because animated symbols are baked into per-frame snapshots.
 
@@ -98,15 +104,15 @@ src/engine/            No React — runs in the browser and in Node
   zip/writer.ts        Stored ZIP64, like the app writes (deterministic)
   xfl/edges.ts         R1/R2  twips, quad→cubic, `cubics` attribute
   xfl/parse.ts         XFL → IR (ir.ts)
-  geometry/            R3 contours per fill style, bounds, perspective (skew) maths
-  resolver/resolver.ts R4–R8  frame ranges, instance transforms, symbol snapshots, tween baking, skew
+  geometry/            R3 contours per fill style, bounds, perspective (skew) maths, cover.ts (R9 seam hiding)
+  resolver/resolver.ts R4–R9  frame ranges, instance transforms, symbol snapshots, tween baking, skew
   tsproj/writer.ts     IR → SQLite (sql.js/WASM) + ZIP
   tsproj/validator.ts  9 checks, reading the output back from its bytes
   report.ts            What is verified / experimental / unsupported
 src/ui/, src/App.tsx   Interface (React)   ·   src/mascot/   Spritesheet mascot component
 ```
 
-**Rules (short).** R1 `#HEX.FF`/twips ÷ 20 → px · R2 use `cubics` if present, else quad→cubic (2/3) · R3 one contour set per fill style · R4 `s = index+1`, `e = index+duration` · R5 `pv = transformationPoint`, `p = M·tp`, `rot = atan2(b,a)`, `sx = √(a²+b²)`, `sy = det/sx` · R6 graphic loop / play once / single frame → pick the symbol frame · R7 deterministic output (UUIDv5 ids, fixed ordering and dates, 4-decimal rounding, stored ZIP) · R8 skew `h = (a·c+b·d)/(a²+b²)`, `M = R·S·[[1,h],[0,1]]`, pivot `pv = A·tp`, Perspective corners `c = (h·y)/width`.
+**Rules (short).** R1 `#HEX.FF`/twips ÷ 20 → px · R2 use `cubics` if present, else quad→cubic (2/3) · R3 one contour set per fill style · R4 `s = index+1`, `e = index+duration` · R5 `pv = transformationPoint`, `p = M·tp`, `rot = atan2(b,a)`, `sx = √(a²+b²)`, `sy = det/sx` · R6 graphic loop / play once / single frame → pick the symbol frame · R7 deterministic output (UUIDv5 ids, fixed ordering and dates, 4-decimal rounding, stored ZIP) · R8 skew `h = (a·c+b·d)/(a²+b²)`, `M = R·S·[[1,h],[0,1]]`, pivot `pv = A·tp`, Perspective corners `c = (h·y)/width` · R9 seams: 1px underlay strokes below fills, on shared edges (darker colour) and on outline parts covered by opaque fills above (own colour, sample offset 0.45px outward at t = 0.2/0.5/0.8, ends trimmed 0.5px).
 
 ## Credits
 

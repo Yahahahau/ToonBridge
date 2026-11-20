@@ -25,6 +25,7 @@ export function App() {
   const [showReport, setShowReport] = useState(false);
   const [showAbout, setShowAbout] = useState(false);
   const [skew, setSkew] = useState<SkewMode>('perspective');
+  const [seams, setSeams] = useState(true);
 
   useEffect(() => () => { if (url) URL.revokeObjectURL(url); }, [url]);
 
@@ -51,13 +52,18 @@ export function App() {
     if (phase === 'done') { clearResult(); setPhase('ready'); }   // a finished result no longer matches the chosen option
   }, [phase, clearResult]);
 
+  const onSeams = useCallback((v: boolean) => {
+    setSeams(v);
+    if (phase === 'done') { clearResult(); setPhase('ready'); }
+  }, [phase, clearResult]);
+
   const onConvert = useCallback(async () => {
     if (!analysis) return;
     clearResult(); setPhase('converting'); setStage('prepare');
     await paint();
     try {
       const SQL = await getSql();
-      const res = await convertAnalysisAsync(analysis, SQL, setStage, paint, { skewMode: skew });
+      const res = await convertAnalysisAsync(analysis, SQL, setStage, paint, { skewMode: skew, seamUnderlay: seams });
       if (!res.report.ok) {
         setOut(res); setErr('The converted file failed its own checks, so it can\'t be downloaded. See the report for details.');
         setPhase('error'); setShowReport(true); return;
@@ -67,7 +73,7 @@ export function App() {
     } catch (e) {
       setErr(`Conversion stopped: ${(e as Error).message}`); setPhase('error');
     }
-  }, [analysis, skew, clearResult]);
+  }, [analysis, skew, seams, clearResult]);
 
   const zipNote = analysis?.zipMode === 'scan-only' ? 'This ZIP had a damaged index. Its contents were recovered from the file headers.' : undefined;
   const busy = phase === 'reading' || phase === 'converting';
@@ -82,7 +88,7 @@ export function App() {
         </div>
         <div className="col-side">
           <ConvertPanel
-            phase={phase} hasFile={!!analysis} skew={skew} onSkew={onSkew} stage={stage} out={out} url={url} error={err}
+            phase={phase} hasFile={!!analysis} skew={skew} onSkew={onSkew} seams={seams} onSeams={onSeams} stage={stage} out={out} url={url} error={err}
             onConvert={() => void onConvert()} onReport={() => setShowReport(true)}
           />
         </div>

@@ -2,6 +2,7 @@
 import type { EdgeRec, Matrix } from '../ir';
 import type { Pt, Seg } from '../xfl/edges';
 import { apply } from './matrix';
+import { trimChain } from './cover';
 import type { Diagnostics } from '../diagnostics';
 
 export interface PathNode { p: Pt; i?: Pt; o?: Pt; }
@@ -97,4 +98,36 @@ export function usedStrokeIds(edges: EdgeRec[]): number[] {
   const s = new Set<number>();
   for (const e of edges) if (e.stroke) s.add(e.stroke);
   return [...s].sort((a, b) => a - b);
+}
+
+/**
+ * Seam underlay (anti-conflation). Animate rasterises a shape as one planar map, so two fills that share an edge meet
+ * without a gap. ToonSquid (like any vector renderer that draws each fill separately) anti-aliases both fills
+ * independently along the shared edge, which lets the background show through as a hairline. The fix: draw a thin
+ * stroke along every edge that has a fill on BOTH sides, *underneath* the fills. The fills still define the exact
+ * boundary; the underlay only shows through the partially covered anti-aliased pixels.
+ * Returns stroke contours grouped by the fill id whose colour the underlay uses (`pick` chooses it per edge).
+ */
+export function seamContours(edges: EdgeRec[], m: Matrix | undefined, pick: (f0: number, f1: number) => number | null, trim = 0): Map<number, Contour[]> {
+  const byFill = new Map<number, Seg[]>();
+  for (const e of edges) {
+    if (!e.fill0 || !e.fill1 || e.fill0 === e.fill1) continue;
+    const f = pick(e.fill0, e.fill1);
+    if (f === null) continue;
+    let a = byFill.get(f); if (!a) byFill.set(f, (a = []));
+    for (const s of e.segs) a.push(xf(s, m));
+  }
+  const out = new Map<number, Contour[]>();
+  for (const f of [...byFill.keys()].sort((x, y) => x - y)) {
+    const { chains, closed } = stitch(byFill.get(f)!);
+    // Open chains are trimmed so a stroke cap cannot poke out past the shape where the shared edge ends.
+    const cs: Contour[] = [];
+    chains.forEach((c, i) => {
+      if (closed[i]) { cs.push(chainToContour(c, true)); return; }
+      const tc = trimChain(c, trim);
+      if (tc.length) cs.push(chainToContour(tc, false));
+    });
+    out.set(f, cs);
+  }
+  return out;
 }

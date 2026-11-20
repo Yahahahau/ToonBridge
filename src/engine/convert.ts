@@ -34,12 +34,12 @@ export function analyzeInput(bytes: Uint8Array, fileName: string): Analysis {
   return { fileName, doc, diag, info: describeDoc(doc), zipMode: zip.mode, zipWarnings: zip.warnings };
 }
 
-export interface ConvertOptions { skewMode?: SkewMode; }
+export interface ConvertOptions { seamUnderlay?: boolean; skewMode?: SkewMode; }
 
 /** The pipeline as a generator: yields the name of each stage before running it, so a UI can paint between stages. */
 function* convertSteps(a: Analysis, SQL: SqlJsStatic, options: ConvertOptions): Generator<string, ConvertOutput, void> {
   yield 'resolve';
-  const project = new Resolver(a.doc, a.diag, { skewMode: options.skewMode ?? 'perspective' }).run();
+  const project = new Resolver(a.doc, a.diag, { skewMode: options.skewMode ?? 'perspective', seamUnderlay: options.seamUnderlay ?? true }).run();
   yield 'write';
   const bytes = writeTsproj(SQL, project);
   yield 'validate';

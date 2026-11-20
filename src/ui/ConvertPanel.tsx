@@ -18,12 +18,12 @@ const SKEW: { id: SkewMode; title: string; desc: string }[] = [
 ];
 
 interface Props {
-  phase: Phase; hasFile: boolean; skew: SkewMode; onSkew: (m: SkewMode) => void;
+  phase: Phase; hasFile: boolean; skew: SkewMode; onSkew: (m: SkewMode) => void; seams: boolean; onSeams: (v: boolean) => void;
   stage: string; out: ConvertOutput | null; url: string | null; error: string | null;
   onConvert: () => void; onReport: () => void;
 }
 
-export function ConvertPanel({ phase, hasFile, skew, onSkew, stage, out, url, error, onConvert, onReport }: Props) {
+export function ConvertPanel({ phase, hasFile, skew, onSkew, seams, onSeams, stage, out, url, error, onConvert, onReport }: Props) {
   const stepIdx = STEPS.findIndex((s) => s.id === stage);
   const pct = phase === 'done' ? 100 : phase === 'converting' ? Math.round((Math.max(stepIdx, 0) / STEPS.length) * 100) : 0;
   const counts = out ? {
@@ -51,6 +51,14 @@ export function ConvertPanel({ phase, hasFile, skew, onSkew, stage, out, url, er
             ))}
           </div>
         </fieldset>
+      )}
+
+      {hasFile && phase !== 'reading' && (
+        <label className={`toggle ${phase === 'converting' ? 'off' : ''}`}>
+          <input type="checkbox" checked={seams} disabled={phase === 'converting'} onChange={(e) => onSeams(e.target.checked)} />
+          <span className="sw" aria-hidden="true" />
+          <span><b>Hide hairline seams</b><small>Fills tuck slightly under the lines above them, so no thin gaps show when you zoom in. Visible edges don't move.</small></span>
+        </label>
       )}
 
       {(phase === 'ready' || phase === 'error' || phase === 'idle') && (

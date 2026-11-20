@@ -1,12 +1,14 @@
 // Resolver: IR -> ToonSquid model. Implements R3 (via contours), R4 frame spans, R5 transforms,
 // R6 graphic-symbol frame mapping (snapshot baking) and motion-tween baking.
-import type { Diagnostics } from '../diagnostics';
-import type { Doc, Frame, InstanceEl, Layer, Matrix, ShapeEl, SymbolDef, Timeline } from '../ir';
+import type { Doc, Frame, InstanceEl, Layer, Matrix, RGBA, ShapeEl, SymbolDef, Timeline } from '../ir';
 import { timelineLength } from '../ir';
 import { apply, compose, decompose, shearMatrix } from '../geometry/matrix';
 import { contoursBounds } from '../geometry/bounds';
 import { shearEffect } from '../geometry/perspective';
-import { fillContours, strokeContours, usedFillIds, usedStrokeIds } from '../geometry/contours';
+import type { Contour } from '../geometry/contours';
+import { CoverIndex, coveredChains } from '../geometry/cover';
+import { Diagnostics } from '../diagnostics';
+import { chainToContour, fillContours, seamContours, strokeContours, usedFillIds, usedStrokeIds } from '../geometry/contours';
 import { rnd, uuid5 } from '../util';
 import type { Content, TSClip, TSDrawing, TSLayer, TSProject } from './model';
 
@@ -14,7 +16,10 @@ interface InstState { lib: string; pv: [number, number]; p: [number, number]; ro
 
 /** How skew (shear) in instance matrices is handled. ToonSquid transforms have no skew. */
 export type SkewMode = 'perspective' | 'bake' | 'off';
-export interface ResolverOptions { skewMode: SkewMode; }
+/** seamUnderlay: draw thin strokes under edges shared by two fills (default on). */
+export interface ResolverOptions { skewMode: SkewMode; seamUnderlay?: boolean; }
+/** Underlay stroke width in the shape's own units (px). Wide enough to cover a 1-px anti-aliasing band at 100 % zoom. */
+const SEAM_WIDTH = 1;
 const SHEAR_EPS = 2e-3; // |h| below this (~0.1°) is negligible
 interface ResolvedEl { sig: string; shape?: ShapeEl; inst?: InstState; }
 
@@ -34,10 +39,10 @@ export class Resolver {
   private staticMemo = new Map<string, boolean>();
   private shapeIds = new WeakMap<object, number>();
   private nextShapeId = 1;
-  private shapeCache = new WeakMap<ShapeEl, Map<number, Content | null>>();
+  private shapeCache = new WeakMap<ShapeEl, Map<string, Content | null>>();
   readonly stats: Record<string, number> = {
     scenes: 0, symbolClips: 0, drawings: 0, vectorLayers: 0, clipLayers: 0, contours: 0, nodes: 0,
-    tweenFramesBaked: 0, hiddenLayersSkipped: 0, skewedInstances: 0, perspectiveEffects: 0, bakedSkewShapes: 0,
+    tweenFramesBaked: 0, hiddenLayersSkipped: 0, skewedInstances: 0, perspectiveEffects: 0, bakedSkewShapes: 0, seamUnderlays: 0,
   };
   private projectId: string;
 
@@ -113,17 +118,29 @@ export class Resolver {
   private buildClip(id: string, name: string, tl: Timeline, srcFrames: number[], isScene: boolean, preH = 0): void {
     const layers: TSLayer[] = [];
     const ordered = [...tl.layers].reverse(); // Animate lists top layer first; ToonSquid lO is bottom-first
-    let li = 0;
+    const conv: Layer[] = [];
     for (const layer of ordered) {
       if (layer.kind === 'folder') { this.diag.info('LAYER_FOLDER', 'Layer folders are flattened (children are converted as ordinary layers)'); continue; }
       if (layer.kind === 'guide') { this.diag.loss('LAYER_GUIDE', 'Guide layers are not converted'); continue; }
       if (layer.kind === 'mask') { this.diag.loss('LAYER_MASK', 'Mask layers are not converted; masked layers are rendered without masking'); continue; }
       if (!layer.visible) { this.diag.loss('LAYER_HIDDEN', 'Hidden layers are not converted'); this.stats.hiddenLayersSkipped++; continue; }
-      const lid = uuid5(`${id}|L${li}`, this.projectId);
-      const drawings = this.buildLayer(id, li, layer, tl, srcFrames, preH);
-      layers.push({ id: lid, name: layer.name || `Layer ${li + 1}`, drawings });
-      li++;
+      conv.push(layer);
     }
+    // Resolve every frame once (bottom-first), so each shape can see what is drawn above it in the same frame.
+    const resolved = conv.map((layer) => srcFrames.map((j) => this.resolveFrame(layer, j, preH)));
+    /** Shapes drawn above element `ci` of layer `li` at frame `k` (later elements of the same frame, then higher layers). */
+    const above = (li: number, k: number, ci: number): ShapeEl[] => {
+      const out: ShapeEl[] = [];
+      const own = resolved[li][k];
+      if (own) for (let c = ci + 1; c < own.length; c++) { const s = own[c].shape; if (s) out.push(s); }
+      for (let l = li + 1; l < conv.length; l++) for (const el of resolved[l][k] ?? []) if (el.shape) out.push(el.shape);
+      return out;
+    };
+    conv.forEach((layer, li) => {
+      const lid = uuid5(`${id}|L${li}`, this.projectId);
+      const drawings = this.buildLayer(id, li, layer, resolved[li], preH, (k, ci) => above(li, k, ci));
+      layers.push({ id: lid, name: layer.name || `Layer ${li + 1}`, drawings });
+    });
     const clip: TSClip = { id, name, isScene, layers, backgroundId: uuid5(`${id}|BG`, this.projectId), frames: srcFrames.length };
     this.clips.set(id, clip);
     this.clipOrder.push(id);
@@ -204,7 +221,7 @@ export class Resolver {
     return out;
   }
 
-  private buildLayer(clipId: string, li: number, layer: Layer, _tl: Timeline, srcFrames: number[], preH: number): TSDrawing[] {
+  private buildLayer(clipId: string, li: number, layer: Layer, frames: (ResolvedEl[] | null)[], preH: number, above: (k: number, ci: number) => ShapeEl[]): TSDrawing[] {
     const drawings: TSDrawing[] = [];
     let runStart = -1;
     let runSig = '';
@@ -217,7 +234,13 @@ export class Resolver {
       runEls.forEach((el, ci) => {
         const cid = uuid5(`${clipId}|L${li}|D${s}|C${ci}`, this.projectId);
         if (el.shape) {
-          const c = this.vectorContent(el.shape, layer.name, preH);
+          // Distinct sets of shapes drawn above this one during the run; a bleed must be hidden in ALL of them.
+          const sets = new Map<string, ShapeEl[]>();
+          for (let k = runStart; k <= endK; k++) {
+            const up = above(k, ci);
+            sets.set(up.map((x) => this.shapeId(x)).join(','), up);
+          }
+          const c = this.vectorContent(el.shape, layer.name, preH, [...sets.entries()].sort((x, y) => (x[0] < y[0] ? -1 : x[0] > y[0] ? 1 : 0)));
           if (c) { content.push({ id: cid, c }); this.stats.vectorLayers++; }
         } else if (el.inst) {
           const sym = this.doc.symbols.get(el.inst.lib)!;
@@ -231,15 +254,15 @@ export class Resolver {
       if (content.length) { drawings.push({ id: did, s, e, content }); this.stats.drawings++; }
       runStart = -1; runSig = ''; runEls = [];
     };
-    for (let k = 0; k < srcFrames.length; k++) {
-      const els = this.resolveFrame(layer, srcFrames[k], preH);
+    for (let k = 0; k < frames.length; k++) {
+      const els = frames[k];
       const sig = els && els.length ? els.map((x) => x.sig).join(';') : '';
       if (sig !== runSig) {
         flush(k - 1);
         if (sig) { runStart = k; runSig = sig; runEls = els!; }
       }
     }
-    flush(srcFrames.length - 1);
+    flush(frames.length - 1);
     return drawings;
   }
 
@@ -256,24 +279,93 @@ export class Resolver {
     return Math.round(h * 10000) / 10000;
   }
 
-  private vectorContent(shape: ShapeEl, layerName: string, preH: number): Content | null {
+  private covers = new Map<string, CoverIndex>();
+  private quiet = new Diagnostics();
+  /** Opaque fill regions of `shapes` (same local space as the shape being converted), cached per set. */
+  private coverIndex(sig: string, shapes: ShapeEl[], preH: number): CoverIndex {
+    const key = `${preH}|${sig}`;
+    let idx = this.covers.get(key);
+    if (idx) return idx;
+    idx = new CoverIndex();
+    for (const s of shapes) {
+      const m = this.shapeMatrix(s, preH);
+      for (const fid of usedFillIds(s.edges)) {
+        const p = s.fills.get(fid);
+        const c = p ? (p.kind === 'solid' ? p.color : p.fallback) : undefined;
+        if (!c || c.a < 0.999) continue;          // only opaque fills can hide a bleed
+        idx.add(fillContours(s.edges, fid, m, this.quiet));
+      }
+    }
+    this.covers.set(key, idx);
+    return idx;
+  }
+  private shapeMatrix(shape: ShapeEl, preH: number): Matrix | undefined {
+    return preH !== 0 && this.opts.skewMode === 'bake' ? compose(shearMatrix(preH), shape.matrix ?? { a: 1, b: 0, c: 0, d: 1, tx: 0, ty: 0 }) : shape.matrix;
+  }
+
+  private vectorContent(shape: ShapeEl, layerName: string, preH: number, uppers: [string, ShapeEl[]][] = []): Content | null {
     let perH = this.shapeCache.get(shape);
     if (!perH) { perH = new Map(); this.shapeCache.set(shape, perH); }
-    const cached = perH.get(preH);
+    const cacheKey = `${preH}|${uppers.map((u) => u[0]).join('/')}`;
+    const cached = perH.get(cacheKey);
     if (cached !== undefined) return cached;
     const bake = preH !== 0 && this.opts.skewMode === 'bake';
     const m: Matrix | undefined = bake ? compose(shearMatrix(preH), shape.matrix ?? { a: 1, b: 0, c: 0, d: 1, tx: 0, ty: 0 }) : shape.matrix;
     const items: Content & { kind: 'vector' } = { kind: 'vector', name: layerName, items: [] };
+    const solidOf = (f: number): RGBA | null => {
+      const p = shape.fills.get(f);
+      const c = p ? (p.kind === 'solid' ? p.color : p.fallback) : undefined;
+      return c && c.a >= 0.999 ? c : null;   // translucent fills would let an underlay show through: never underlay them
+    };
+    const fills: { fid: number; color: RGBA; contours: Contour[] }[] = [];
     for (const fid of usedFillIds(shape.edges)) {
       const paint = shape.fills.get(fid);
       if (!paint) { this.diag.loss('FILL_MISSING', `Fill style ${fid} referenced by edges is not defined`); continue; }
       const color = paint.kind === 'solid' ? paint.color : paint.fallback;
       if (!color) { this.diag.loss('FILL_UNSUPPORTED', `Fill type ${paint.kind === 'unsupported' ? paint.what : ''} not converted`, 1); continue; }
       const contours = fillContours(shape.edges, fid, m, this.diag);
-      if (!contours.length) continue;
-      items.items.push({ kind: 'fill', color, contours });
-      this.stats.contours += contours.length;
-      for (const c of contours) this.stats.nodes += c.nodes.length;
+      if (contours.length) fills.push({ fid, color, contours });
+    }
+    // Anti-seam underlays, drawn BELOW the fills (see geometry/contours.ts):
+    //  - covered shapes (something is drawn above them): each fill's own outline, in its own colour -> the fill bleeds
+    //    SEAM_WIDTH/2 under whatever covers its edge. The visible boundary is still drawn by the layer above.
+    //  - topmost shapes: only edges shared by two fills, so the visible geometry is not changed at all.
+    if (this.opts.seamUnderlay !== false && fills.length) {
+      const covers = uppers.filter((u) => u[1].length).map((u) => this.coverIndex(u[0], u[1], preH));
+      const anyBleed = covers.length === uppers.length && covers.length > 0;   // every frame of the run has something above
+      if (anyBleed) {
+        let bled = 0;
+        for (const f of fills) {
+          if (!solidOf(f.fid)) continue;
+          // Bleed only the outline parts that are hidden under opaque fills above, in every frame of the run.
+          const contours = coveredChains(f.contours, covers, SEAM_WIDTH * 0.45, SEAM_WIDTH / 2).map((c) => chainToContour(c, false));
+          if (!contours.length) continue;
+          items.items.push({ kind: 'stroke', color: f.color, width: SEAM_WIDTH, contours });
+          this.stats.seamUnderlays++; bled++;
+        }
+        if (bled) this.diag.info('SEAM_BLEED', `Fill edges hidden under layers above get a ${SEAM_WIDTH / 2}px bleed, to hide anti-aliasing seams (visible edges unchanged)`, 1);
+      }
+      {
+        const lum = (c: RGBA) => 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b;
+        // Darker of the two colours: where a seam meets a dark outline it disappears into it.
+        const pick = (f0: number, f1: number) => {
+          const a = solidOf(f0), b = solidOf(f1);
+          if (!a || !b) return null;
+          const la = lum(a), lb = lum(b);
+          return la < lb || (la === lb && f0 < f1) ? f0 : f1;
+        };
+        const seams = seamContours(shape.edges, m, pick, SEAM_WIDTH / 2);
+        for (const [fid, contours] of seams) {
+          items.items.push({ kind: 'stroke', color: solidOf(fid)!, width: SEAM_WIDTH, contours });
+          this.stats.seamUnderlays++;
+        }
+        if (seams.size) this.diag.info('SEAM_UNDERLAY', `Thin ${SEAM_WIDTH}px underlay strokes added beneath edges shared by two fills, to hide anti-aliasing seams`, 1);
+      }
+    }
+    for (const f of fills) {
+      items.items.push({ kind: 'fill', color: f.color, contours: f.contours });
+      this.stats.contours += f.contours.length;
+      for (const c of f.contours) this.stats.nodes += c.nodes.length;
     }
     for (const sid of usedStrokeIds(shape.edges)) {
       const st = shape.strokes.get(sid);
@@ -294,7 +386,7 @@ export class Resolver {
     }
     if (bake && items.items.length) this.stats.bakedSkewShapes++;
     const res = items.items.length ? items : null;
-    perH.set(preH, res);
+    perH.set(cacheKey, res);
     return res;
   }
 }

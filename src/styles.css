@@ -131,6 +131,17 @@ summary { cursor: pointer; font-weight: 700; color: var(--link); padding: 6px 0;
 .seg label:has(:focus-visible) { outline: 3px solid var(--mint); outline-offset: 2px; }
 .seg input { position: absolute; opacity: 0; pointer-events: none; }
 .seg b { font-weight: 800; } .seg small { font-weight: 600; }
+/* switch */
+.toggle { display: grid; grid-template-columns: auto 1fr; gap: 12px; align-items: start; margin: 0 0 16px; padding: 10px 14px; border: 1.5px solid var(--line); border-radius: var(--r-sm); background: var(--bg); cursor: pointer; position: relative; }
+.toggle:hover { border-color: var(--mint); }
+.toggle input { position: absolute; opacity: 0; pointer-events: none; }
+.toggle .sw { width: 40px; height: 24px; border-radius: 999px; background: var(--line-strong); position: relative; transition: background .15s; margin-top: 2px; border: 1.5px solid var(--ink); }
+.toggle .sw::after { content: ''; position: absolute; top: 2px; left: 2px; width: 17px; height: 17px; border-radius: 50%; background: var(--card); border: 1.5px solid var(--ink); transition: transform .18s cubic-bezier(.3, 1.4, .5, 1); }
+.toggle input:checked + .sw { background: var(--mint); }
+.toggle input:checked + .sw::after { transform: translateX(15px); }
+.toggle:has(:focus-visible) { outline: 3px solid var(--mint); outline-offset: 2px; }
+.toggle b { font-weight: 800; display: block; } .toggle small { font-weight: 600; display: block; }
+.toggle.off { opacity: .6; cursor: not-allowed; }
 fieldset:disabled .seg label { opacity: .6; cursor: not-allowed; }
 
 .progress { display: flex; flex-direction: column; gap: 14px; margin-top: 4px; }
