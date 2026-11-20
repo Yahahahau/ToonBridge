@@ -48,7 +48,9 @@ ToonSquid's file format isn't publicly documented, so everything here is derived
 - along edges shared by two fills of one shape (in the darker colour), and
 - along the parts of a fill's outline that are hidden under opaque fills on the layers above it in every frame where it is shown (a 0.5px bleed in the fill's own colour, trimmed at the ends).
 
-Visible edges stay where Animate put them: against an 8× supersampled Animate reference, the only pixels that change are the seams and those sub-pixel gaps. Hiding is on by default and can be switched off in the UI (*Hide hairline seams*). It makes files bigger (Boyfriend: 78 → 97 MB).
+Visible edges stay where Animate put them: against an 8× supersampled Animate reference, the only pixels that change are the seams and those sub-pixel gaps. Hiding is on by default and can be switched off in the UI (*Hide hairline seams*). It makes files bigger (about +25% on the Boyfriend sample).
+
+**Held drawings.** Like ToonSquid's own timeline, a picture that doesn't change is **one drawing held over several frames** (`s..e`), not a new drawing per frame. Frames of a symbol that look the same (a held keyframe, a loop landing on the same picture) share one snapshot clip, so the drawing that shows them can be held too. On the Boyfriend sample: 484 → 205 clips, 171 → 68 scene drawings, 97 → 53 MB, and all 26 frames render pixel-identical to before.
 
 Other limits: conversion runs on the main thread (big projects freeze the page briefly), and output can be large because animated symbols are baked into per-frame snapshots.
 
@@ -112,7 +114,7 @@ src/engine/            No React — runs in the browser and in Node
 src/ui/, src/App.tsx   Interface (React)   ·   src/mascot/   Spritesheet mascot component
 ```
 
-**Rules (short).** R1 `#HEX.FF`/twips ÷ 20 → px · R2 use `cubics` if present, else quad→cubic (2/3) · R3 one contour set per fill style · R4 `s = index+1`, `e = index+duration` · R5 `pv = transformationPoint`, `p = M·tp`, `rot = atan2(b,a)`, `sx = √(a²+b²)`, `sy = det/sx` · R6 graphic loop / play once / single frame → pick the symbol frame · R7 deterministic output (UUIDv5 ids, fixed ordering and dates, 4-decimal rounding, stored ZIP) · R8 skew `h = (a·c+b·d)/(a²+b²)`, `M = R·S·[[1,h],[0,1]]`, pivot `pv = A·tp`, Perspective corners `c = (h·y)/width` · R9 seams: 1px underlay strokes below fills, on shared edges (darker colour) and on outline parts covered by opaque fills above (own colour, sample offset 0.45px outward at t = 0.2/0.5/0.8, ends trimmed 0.5px).
+**Rules (short).** R1 `#HEX.FF`/twips ÷ 20 → px · R2 use `cubics` if present, else quad→cubic (2/3) · R3 one contour set per fill style · R4 `s = index+1`, `e = index+duration` · R5 `pv = transformationPoint`, `p = M·tp`, `rot = atan2(b,a)`, `sx = √(a²+b²)`, `sy = det/sx` · R6 graphic loop / play once / single frame → pick the symbol frame; symbol frames with identical content share one clip so drawings are held (`s..e`) · R7 deterministic output (UUIDv5 ids, fixed ordering and dates, 4-decimal rounding, stored ZIP) · R8 skew `h = (a·c+b·d)/(a²+b²)`, `M = R·S·[[1,h],[0,1]]`, pivot `pv = A·tp`, Perspective corners `c = (h·y)/width` · R9 seams: 1px underlay strokes below fills, on shared edges (darker colour) and on outline parts covered by opaque fills above (own colour, sample offset 0.45px outward at t = 0.2/0.5/0.8, ends trimmed 0.5px).
 
 ## Credits
 

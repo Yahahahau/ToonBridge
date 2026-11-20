@@ -9,7 +9,7 @@ import type { Contour } from '../geometry/contours';
 import { CoverIndex, coveredChains } from '../geometry/cover';
 import { Diagnostics } from '../diagnostics';
 import { chainToContour, fillContours, seamContours, strokeContours, usedFillIds, usedStrokeIds } from '../geometry/contours';
-import { rnd, uuid5 } from '../util';
+import { hex, rnd, sha1, uuid5 } from '../util';
 import type { Content, TSClip, TSDrawing, TSLayer, TSProject } from './model';
 
 interface InstState { lib: string; pv: [number, number]; p: [number, number]; rot: number; sx: number; sy: number; h: number; alpha: number; symFrame: number; blend: string; }
@@ -99,10 +99,39 @@ export class Resolver {
     return (((first + offset) % len) + len) % len;
   }
 
-  /** Returns the clip id for `sym` snapshotted at `symFrame` (R6 baking); builds it on first use. */
+  private frameKeys = new Map<string, string>();
+  private keyStack = new Set<string>();
+  /**
+   * Content key of `sym` at `symFrame`: identical keys mean an identical picture. Frames of a symbol that look the same
+   * (a held keyframe, a loop landing on an identical frame, ...) share one snapshot clip, so the parent drawing can be
+   * HELD over those frames like a ToonSquid drawing (s..e), instead of becoming a new one-frame drawing every frame.
+   */
+  private frameKey(sym: SymbolDef, symFrame: number, h: number): string {
+    if (this.isStatic(sym)) return 's';
+    const memo = `${sym.name}@${symFrame}|${rnd(h)}`;
+    const hit = this.frameKeys.get(memo);
+    if (hit) return hit;
+    if (this.keyStack.has(memo)) return `f${symFrame}`;     // cycle: fall back to the frame number
+    this.keyStack.add(memo);
+    const diag = this.diag;
+    this.diag = this.quiet;                                  // key computation must not double-count diagnostics
+    const parts: string[] = [];
+    try {
+      for (const layer of sym.timeline.layers) {
+        if (layer.kind !== 'normal' || !layer.visible) { parts.push('-'); continue; }
+        const els = this.resolveFrame(layer, symFrame, h);
+        parts.push(els && els.length ? els.map((e) => e.sig).join(';') : '');
+      }
+    } finally { this.diag = diag; this.keyStack.delete(memo); }
+    const key = hex(sha1(new TextEncoder().encode(parts.join('|')))).slice(0, 16);
+    this.frameKeys.set(memo, key);
+    return key;
+  }
+
+  /** Returns the clip id for `sym` snapshotted at `symFrame` (R6 baking); builds it on first use. Frames with the same content share it. */
   private clipFor(sym: SymbolDef, symFrame: number, h = 0): string | null {
     const stat = this.isStatic(sym);
-    const key = (stat ? `sym:${sym.name}` : `sym:${sym.name}@${symFrame}`) + (h ? `|h${rnd(h)}` : '');
+    const key = (stat ? `sym:${sym.name}` : `sym:${sym.name}#${this.frameKey(sym, symFrame, h)}`) + (h ? `|h${rnd(h)}` : '');
     const id = uuid5(key, this.projectId);
     if (this.clips.has(id)) return id;
     if (this.building.has(id)) { this.diag.loss('SYMBOL_CYCLE', `Recursive symbol reference to "${sym.name}" skipped`); return null; }
@@ -215,7 +244,7 @@ export class Resolver {
         this.diag.approx('TWEEN_BAKED', 'Motion tweens are baked per frame; easing model p=t+e·t(1−t) is unverified against Animate output', 1);
         this.stats.tweenFramesBaked++;
       }
-      const sig = `I${e.lib}|${rnd(st.pv[0])},${rnd(st.pv[1])}|${rnd(st.p[0])},${rnd(st.p[1])}|${rnd(st.rot)}|${rnd(st.sx)},${rnd(st.sy)}|h${rnd(st.h)}|${rnd(st.alpha)}|${this.isStatic(sym) ? 's' : st.symFrame}`;
+      const sig = `I${e.lib}|${rnd(st.pv[0])},${rnd(st.pv[1])}|${rnd(st.p[0])},${rnd(st.p[1])}|${rnd(st.rot)}|${rnd(st.sx)},${rnd(st.sy)}|h${rnd(st.h)}|${rnd(st.alpha)}|${this.frameKey(sym, st.symFrame, st.h)}`;
       out.push({ sig, inst: st });
     }
     return out;
