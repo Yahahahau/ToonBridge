@@ -7,6 +7,7 @@ import { contoursBounds } from '../geometry/bounds';
 import { shearEffect } from '../geometry/perspective';
 import type { Contour } from '../geometry/contours';
 import { CoverIndex, coveredChains } from '../geometry/cover';
+import { BLEND_CODE, BLEND_MAP, ENCODED, planColor, planFilters } from '../effects/plan';
 import { Diagnostics } from '../diagnostics';
 import { chainToContour, fillContours, seamContours, strokeContours, usedFillIds, usedStrokeIds } from '../geometry/contours';
 import { hex, rnd, sha1, uuid5 } from '../util';
@@ -219,7 +220,7 @@ export class Resolver {
       const Me = eff(e.matrix);
       const dec = decompose(Me);
       const h = this.shearOf(dec.h);
-      if (e.blend !== 'normal') this.diag.loss('BLEND_NOT_WRITTEN', `Blend mode "${e.blend}" on instances not written (ToonSquid blend field verified only on shape layers)`, 1);
+      this.reportEffects(e);
       let st: InstState = {
         lib: e.lib, pv: [e.tp[0], e.tp[1]], p: apply(Me, e.tp), rot: dec.rot, sx: dec.sx, sy: dec.sy, h,
         alpha: e.alpha, symFrame, blend: e.blend,
@@ -293,6 +294,29 @@ export class Resolver {
     }
     flush(frames.length - 1);
     return drawings;
+  }
+
+  /**
+   * Filters, colour effects and blend modes of an instance (see effects/plan.ts). Each is mapped to its ToonSquid
+   * counterpart; it is only WRITTEN when that effect's file encoding has been seen in an app-made file. Otherwise the
+   * report says exactly what it would become, so nothing is dropped silently.
+   */
+  private reportEffects(e: InstanceEl): void {
+    const label: Record<string, string> = { gaussianBlur: 'Gaussian Blur', adjustments: 'Adjustments', dropShadow: 'Drop Shadow' };
+    for (const plan of [planFilters(e.filters), planColor(e.colorFx)]) {
+      for (const fx of plan.effects) {
+        if (ENCODED.has(fx.kind)) continue;
+        this.diag.loss(`FX_PENDING_${fx.kind}`, `${fx.note}: maps to ToonSquid "${label[fx.kind]}", not written yet (its file encoding has not been seen in an app-made .tsproj)`, 1);
+      }
+      for (const l of plan.losses) this.diag.loss('FX_NO_EQUIVALENT', l, 1);
+      for (const a of plan.approx) this.diag.approx('FX_APPROX', a, 1);
+    }
+    if (e.blend !== 'normal') {
+      const ts = BLEND_MAP[e.blend];
+      if (ts === undefined || ts === null) this.diag.loss('BLEND_NO_EQUIVALENT', `Blend mode "${e.blend}" has no ToonSquid equivalent`, 1);
+      else if (ts === 'Normal') this.diag.approx('BLEND_LAYER', `Blend mode "${e.blend}" -> ToonSquid Normal`, 1);
+      else if (BLEND_CODE[ts] === undefined) this.diag.loss('BLEND_PENDING', `Blend mode "${e.blend}" maps to ToonSquid "${ts}", not written yet (the bM number for "${ts}" has not been decoded)`, 1);
+    }
   }
 
   /** Applies the skew policy to a raw shear factor; returns the shear that will be written (0 = none). */

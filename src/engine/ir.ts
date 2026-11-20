@@ -1,5 +1,6 @@
 // Intermediate representation (format-neutral).
 import type { Seg } from './xfl/edges';
+import type { AnimateFilter, ColorEffect } from './effects/plan';
 
 export interface Matrix { a: number; b: number; c: number; d: number; tx: number; ty: number; }
 export interface RGBA { r: number; g: number; b: number; a: number; } // 0..1
@@ -26,6 +27,8 @@ export interface InstanceEl {
   firstFrame: number;
   blend: string;
   alpha: number;
+  filters: AnimateFilter[];
+  colorFx?: ColorEffect;
 }
 export type Element = ShapeEl | InstanceEl;
 

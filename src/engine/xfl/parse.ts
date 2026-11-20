@@ -1,4 +1,5 @@
 // XFL reader: ZIP entries -> IR (Doc). Preserves everything it can; reports the rest.
+import type { AnimateFilter, ColorEffect } from '../effects/plan';
 import type { Diagnostics } from '../diagnostics';
 import type { Doc, Element, EdgeRec, Frame, InstanceEl, Layer, Matrix, Paint, RGBA, ShapeEl, StrokeStyle, SymbolDef, Timeline, TweenInfo } from '../ir';
 import { compose, IDENTITY } from '../geometry/matrix';
@@ -73,6 +74,27 @@ function applyMatrixToShape(s: ShapeEl, m: Matrix): ShapeEl {
   return { ...s, matrix: s.matrix ? compose(m, s.matrix) : m };
 }
 
+/** Animate filters. Missing attributes take the Flash/AS3 filter-class defaults. Disabled filters (isEnabled="false") are skipped. */
+function parseFilters(holder: XNode | undefined): AnimateFilter[] {
+  const out: AnimateFilter[] = [];
+  const b = (x: XNode, k: string) => x.attrs[k] === 'true';
+  for (const f of kids(holder)) {
+    if (f.attrs.isEnabled === 'false') continue;
+    const q = attrNum(f, 'quality', 1);
+    switch (f.name) {
+      case 'BlurFilter': out.push({ kind: 'blur', blurX: attrNum(f, 'blurX', 4), blurY: attrNum(f, 'blurY', 4), quality: q }); break;
+      case 'DropShadowFilter': out.push({ kind: 'dropShadow', blurX: attrNum(f, 'blurX', 4), blurY: attrNum(f, 'blurY', 4), quality: q, angle: attrNum(f, 'angle', 45), distance: attrNum(f, 'distance', 4), color: parseColor(f.attrs.color ?? '#000000', attrNum(f, 'alpha', 1)), strength: attrNum(f, 'strength', 1), knockout: b(f, 'knockout'), inner: b(f, 'inner'), hideObject: b(f, 'hideObject') }); break;
+      case 'GlowFilter': out.push({ kind: 'glow', blurX: attrNum(f, 'blurX', 6), blurY: attrNum(f, 'blurY', 6), quality: q, color: parseColor(f.attrs.color ?? '#FF0000', attrNum(f, 'alpha', 1)), strength: attrNum(f, 'strength', 2), knockout: b(f, 'knockout'), inner: b(f, 'inner') }); break;
+      case 'AdjustColorFilter': out.push({ kind: 'adjustColor', brightness: attrNum(f, 'brightness', 0), contrast: attrNum(f, 'contrast', 0), saturation: attrNum(f, 'saturation', 0), hue: attrNum(f, 'hue', 0) }); break;
+      case 'BevelFilter': out.push({ kind: 'bevel', name: 'Bevel' }); break;
+      case 'GradientGlowFilter': out.push({ kind: 'gradientGlow', name: 'Gradient Glow' }); break;
+      case 'GradientBevelFilter': out.push({ kind: 'gradientBevel', name: 'Gradient Bevel' }); break;
+      default: out.push({ kind: 'other', name: f.name });
+    }
+  }
+  return out;
+}
+
 function parseInstance(n: XNode, diag: Diagnostics): InstanceEl | null {
   const lib = n.attrs.libraryItemName;
   if (!lib) { diag.loss('XFL_INSTANCE_NOLIB', 'Symbol instance without libraryItemName skipped'); return null; }
@@ -83,22 +105,22 @@ function parseInstance(n: XNode, diag: Diagnostics): InstanceEl | null {
   const tpn = child(child(n, 'transformationPoint') ?? ({ children: [] } as unknown as XNode), 'Point');
   const tp: [number, number] = tpn ? [attrNum(tpn, 'x', 0), attrNum(tpn, 'y', 0)] : [0, 0];
   let alpha = 1;
+  let colorFx: ColorEffect | undefined;
   const col = child(child(n, 'color') ?? ({ children: [] } as unknown as XNode), 'Color');
   if (col) {
     alpha = attrNum(col, 'alphaMultiplier', 1);
-    const defaults: Record<string, number> = { alphaMultiplier: 1, redMultiplier: 1, greenMultiplier: 1, blueMultiplier: 1, alphaOffset: 0, redOffset: 0, greenOffset: 0, blueOffset: 0, brightness: 0, tintMultiplier: 0 };
-    for (const [k, v] of Object.entries(col.attrs)) {
-      if (k === 'alphaMultiplier') continue;
-      if (k === 'tintColor') { if (col.attrs.tintMultiplier && Number(col.attrs.tintMultiplier) !== 0) diag.loss('XFL_COLOR_EFFECT', 'Tint colour effect on instances is not converted'); continue; }
-      if (k in defaults && Number(v) !== defaults[k]) diag.loss('XFL_COLOR_EFFECT', `Colour effect "${k}" on instances is not converted`);
-    }
+    colorFx = {
+      alphaMultiplier: alpha, redMultiplier: attrNum(col, 'redMultiplier', 1), greenMultiplier: attrNum(col, 'greenMultiplier', 1), blueMultiplier: attrNum(col, 'blueMultiplier', 1),
+      alphaOffset: attrNum(col, 'alphaOffset', 0), redOffset: attrNum(col, 'redOffset', 0), greenOffset: attrNum(col, 'greenOffset', 0), blueOffset: attrNum(col, 'blueOffset', 0),
+      brightness: attrNum(col, 'brightness', 0), tintMultiplier: attrNum(col, 'tintMultiplier', 0), tintColor: col.attrs.tintColor,
+    };
   }
-  if (child(n, 'filters')) diag.loss('XFL_FILTERS', 'Instance filters (blur/glow/...) are not converted');
+  const filters = parseFilters(child(n, 'filters'));
   if (symbolType === 'movie clip') diag.approx('XFL_MOVIECLIP', 'Movie clip instances are treated like looping graphics from frame 1 (independent playback is not modelled)');
   if (symbolType === 'button') diag.approx('XFL_BUTTON', 'Button instances are frozen at their Up state (frame 1)');
   return {
     type: 'instance', lib, symbolType, matrix: parseMatrix(child(n, 'matrix')) ?? IDENTITY, tp, loop,
-    firstFrame: attrNum(n, 'firstFrame', 0), blend: n.attrs.blendMode ?? 'normal', alpha,
+    firstFrame: attrNum(n, 'firstFrame', 0), blend: n.attrs.blendMode ?? 'normal', alpha, filters, colorFx,
   };
 }
 
