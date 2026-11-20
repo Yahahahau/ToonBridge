@@ -22,7 +22,8 @@ export type Content =
 
 export interface TSDrawing { id: string; s: number; e: number; content: { id: string; c: Content }[]; }
 export interface TSLayer { id: string; name: string; drawings: TSDrawing[]; }
-export interface TSClip { id: string; name: string; isScene: boolean; layers: TSLayer[]; backgroundId: string; frames: number; }
+/** blendsInside: the clip holds blended content, so whoever shows it should isolate it (see resolver). */
+export interface TSClip { id: string; name: string; isScene: boolean; layers: TSLayer[]; backgroundId: string; frames: number; blendsInside?: boolean; }
 export interface TSProject {
   id: string; name: string; width: number; height: number; fps: number;
   clips: TSClip[]; sceneIds: string[];

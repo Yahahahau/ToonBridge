@@ -83,6 +83,9 @@ export function itemsToSvg(items: any[], effect?: any): string {
   return out;
 }
 
+/** ToonSquid bM -> CSS mix-blend-mode (Add/Subtract have no CSS mode: Add ~ plus-lighter is not supported by librsvg, so screen is used for previews). */
+const CSS_BLEND: Record<number, string> = { 2: 'darken', 3: 'multiply', 4: 'color-burn', 7: 'lighten', 8: 'screen', 9: 'color-dodge', 10: 'screen', 12: 'overlay', 13: 'soft-light', 14: 'hard-light', 19: 'difference', 20: 'exclusion', 23: 'hue', 24: 'saturation', 25: 'color', 26: 'luminosity' };
+
 export async function renderTsprojSvg(file: string, frame: number, useEffects = true): Promise<string> {
   const SQL = await nodeSql();
   const zip = readZipTolerant(new Uint8Array(readFileSync(file)));
@@ -123,7 +126,10 @@ export async function renderTsprojSvg(file: string, frame: number, useEffects = 
             svg += `<g transform="translate(${tf.p[0]} ${tf.p[1]}) rotate(${((tf.r ?? 0) * 180) / Math.PI}) scale(${sc[0]} ${sc[1]}) translate(${-tf.pv[0]} ${-tf.pv[1]})">${itemsToSvg([{ f: cd.fC, p: cd.p }], eff)}</g>`;
           } else if (c[0] === 4) {
             const tf = cd.tf, sc = tf.s ?? [1, 1];
-            svg += `<g opacity="${cd.op ?? 1}" transform="translate(${tf.p[0]} ${tf.p[1]}) rotate(${((tf.r ?? 0) * 180) / Math.PI}) scale(${sc[0]} ${sc[1]}) translate(${-tf.pv[0]} ${-tf.pv[1]})">${clip(cd.cl.id, ((f - dr.s) % Math.max(1, clipLen(cd.cl.id))) + 1, depth + 1)}</g>`;
+            const bm = cd.bM as number | undefined;
+            // Blend: SVG mix-blend-mode. ToonSquid symbol layers are Pass Through unless bM is set; bM 0 (Normal) isolates.
+            const style = bm === undefined ? '' : ` style="${bm === 0 ? 'isolation:isolate' : `mix-blend-mode:${CSS_BLEND[bm] ?? 'normal'};isolation:isolate`}"`;
+            svg += `<g${style} opacity="${cd.op ?? 1}" transform="translate(${tf.p[0]} ${tf.p[1]}) rotate(${((tf.r ?? 0) * 180) / Math.PI}) scale(${sc[0]} ${sc[1]}) translate(${-tf.pv[0]} ${-tf.pv[1]})">${clip(cd.cl.id, ((f - dr.s) % Math.max(1, clipLen(cd.cl.id))) + 1, depth + 1)}</g>`;
           }
         }
       }

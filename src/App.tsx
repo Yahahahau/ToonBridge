@@ -24,7 +24,7 @@ export function App() {
   const [dropErr, setDropErr] = useState<string | null>(null); // rejected file
   const [showReport, setShowReport] = useState(false);
   const [showAbout, setShowAbout] = useState(false);
-  const [skew, setSkew] = useState<SkewMode>('perspective');
+  const [skew, setSkew] = useState<SkewMode>('bake');
   const [seams, setSeams] = useState(true);
 
   useEffect(() => () => { if (url) URL.revokeObjectURL(url); }, [url]);

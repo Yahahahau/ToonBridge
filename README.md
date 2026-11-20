@@ -44,6 +44,12 @@ ToonSquid's file format isn't publicly documented, so everything here is derived
 
 **Skew.** ToonSquid has no skew in its transform, so skewed instances are converted with its *Perspective* effect (layer type 121 + corner offsets), whose layout was decoded from an app-made sample. Rendering the written file back matches Animate's own matrices (mean error ≈ 7×10⁻⁵, versus 1.8×10⁻² when skew is ignored), but that only proves the encode/decode maths agree — **not** that ToonSquid interprets the effect the same way. Two safer alternatives are available in the UI: *Bake into paths* (exact, larger file) and *Ignore skew*.
 
+**Safeguards built into the converter** (each one is reported when it fires):
+- *Tween guard*: every baked motion tween must land exactly (≤ 0.05 px) on both of its keyframes; if the model can't reproduce one, the tween is held at its start keyframe instead of producing a jumping in-between.
+- *Symbol-swap tweens* are held (below).
+- *Blend isolation*: a symbol whose own content uses blend modes is written as an isolated group (ToonSquid **Normal**, `bM 0`) instead of the default **Pass Through**, so its blends stay inside the symbol. Without this, BF's miss poses (Hard Light layers) blended against the white Background and came out washed-out lavender.
+- *Verified encoding first*: skew is **baked into the paths** by default (exact geometry); the Perspective-effect mode stays available but is marked experimental.
+
 **Tweens between different symbols** (a classic tween whose end keyframe holds another symbol, e.g. Animate's auto-made `Tween 13` → `BF sing face ye`) are held at the start keyframe instead of being interpolated: interpolating mixes two unrelated registration points and threw parts of the character out of place for a frame.
 
 **Library names** are the symbol's own name; extra snapshots of the same symbol are `name 2`, `name 3`, …

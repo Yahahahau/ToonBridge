@@ -12,8 +12,8 @@ export const STEPS: { id: string; label: string }[] = [
 ];
 
 const SKEW: { id: SkewMode; title: string; desc: string }[] = [
-  { id: 'perspective', title: 'Perspective effect', desc: 'Keeps shapes editable. Experimental.' },
-  { id: 'bake', title: 'Bake into paths', desc: 'Exact look, larger file.' },
+  { id: 'bake', title: 'Bake into paths', desc: 'Exact shapes, like Animate. Recommended.' },
+  { id: 'perspective', title: 'Perspective effect', desc: 'Keeps the effect editable. Experimental.' },
   { id: 'off', title: 'Ignore skew', desc: 'Skewed parts are listed as lost.' },
 ];
 

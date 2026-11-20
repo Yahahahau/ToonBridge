@@ -71,3 +71,23 @@ describe('blend modes and effects are written like the app does', () => {
     expect(fx[2].d).toMatchObject({ Na: 'Adjustments', h: 0.3, s: -0.5, b: 0.2, c: 0.4 });
   });
 });
+
+describe('blend isolation', () => {
+  it('a symbol whose content is blended is shown as an isolated group (bM 0), not Pass Through', async () => {
+    const XNS = 'xmlns="http://ns.adobe.com/xfl/2008/"';
+    const box = (n: string, c: string) => `<DOMSymbolItem ${XNS} name="${n}" symbolType="graphic"><timeline><DOMTimeline name="${n}"><layers><DOMLayer name="a"><frames><DOMFrame index="0" duration="1"><elements><DOMShape><fills><FillStyle index="1"><SolidColor color="${c}"/></FillStyle></fills><edges><Edge fillStyle1="1" edges="!0 0|2000 0|2000 2000|0 2000|0 0"/></edges></DOMShape></elements></DOMFrame></frames></DOMLayer></layers></DOMTimeline></timeline></DOMSymbolItem>`;
+    const tint = `<DOMSymbolItem ${XNS} name="Tinted" symbolType="graphic"><timeline><DOMTimeline name="Tinted"><layers>
+      <DOMLayer name="purple"><frames><DOMFrame index="0" duration="1"><elements><DOMSymbolInstance libraryItemName="Purple" blendMode="hardlight"/></elements></DOMFrame></frames></DOMLayer>
+      <DOMLayer name="reg"><frames><DOMFrame index="0" duration="1"><elements><DOMSymbolInstance libraryItemName="Reg" blendMode="hardlight"/></elements></DOMFrame></frames></DOMLayer>
+    </layers></DOMTimeline></timeline></DOMSymbolItem>`;
+    const doc = `<DOMDocument ${XNS} width="200" height="200" frameRate="24"><symbols><Include href="Reg.xml"/><Include href="Purple.xml"/><Include href="Tinted.xml"/></symbols><timelines><DOMTimeline name="Scene 1"><layers><DOMLayer name="L"><frames><DOMFrame index="0" duration="1"><elements><DOMSymbolInstance libraryItemName="Tinted" symbolType="graphic"/></elements></DOMFrame></frames></DOMLayer></layers></DOMTimeline></timelines></DOMDocument>`;
+    const bytes = zipSync({ 'DOMDocument.xml': strToU8(doc), 'LIBRARY/Reg.xml': strToU8(box('Reg', '#FF0000')), 'LIBRARY/Purple.xml': strToU8(box('Purple', '#8800FF')), 'LIBRARY/Tinted.xml': strToU8(tint), 'x.xfl': strToU8('PROXY-CS5') }, { level: 0 });
+    const out = convertAnalysis(analyzeInput(bytes, 'x.fla'), await nodeSql());
+    const scene = out.project.clips.find((c) => c.isScene)!;
+    const ref = scene.layers[0].drawings[0].content[0].c;
+    expect(ref.kind === 'clip' && ref.ref.blend).toBe(0);            // isolated group
+    const tinted = out.project.clips.find((c) => c.name === 'Tinted')!;
+    const blends = tinted.layers.map((l) => { const c = l.drawings[0].content[0].c; return c.kind === 'clip' ? c.ref.blend : null; });
+    expect(blends).toEqual([14, 14]);                                 // children keep Hard Light
+  });
+});

@@ -28,6 +28,23 @@ const TWO_PI = Math.PI * 2;
 const normPi = (a: number) => { let x = a % TWO_PI; if (x > Math.PI) x -= TWO_PI; if (x <= -Math.PI) x += TWO_PI; return x; };
 
 /** Experimental: Animate "simple ease" modelled as quadratic: p = t + e*t*(1-t), e=intensity/100. */
+/**
+ * Max distance (px) between where `s` puts three local reference points and where matrix `M` puts them, using shear `h`
+ * as written (the skew policy may have changed it). 0 means the state reproduces the keyframe exactly.
+ */
+function stateError(s: { pv: [number, number]; p: [number, number]; rot: number; sx: number; sy: number }, M: Matrix, h: number): number {
+  const c = Math.cos(s.rot), sn = Math.sin(s.rot);
+  const a = c * s.sx, b = sn * s.sx, cc = c * s.sx * h - sn * s.sy, d = sn * s.sx * h + c * s.sy;
+  let worst = 0;
+  for (const q of [s.pv, [s.pv[0] + 100, s.pv[1]], [s.pv[0], s.pv[1] + 100]] as [number, number][]) {
+    const lx = q[0] - s.pv[0], ly = q[1] - s.pv[1];
+    const x = s.p[0] + a * lx + cc * ly, y = s.p[1] + b * lx + d * ly;
+    const m = apply(M, q);
+    worst = Math.max(worst, Math.hypot(x - m[0], y - m[1]));
+  }
+  return worst;
+}
+
 export function easeT(t: number, intensity: number): number {
   const e = Math.max(-100, Math.min(100, intensity)) / 100;
   return t + e * t * (1 - t);
@@ -47,7 +64,7 @@ export class Resolver {
   };
   private projectId: string;
 
-  constructor(private doc: Doc, private diag: Diagnostics, private opts: ResolverOptions = { skewMode: 'perspective' }) {
+  constructor(private doc: Doc, private diag: Diagnostics, private opts: ResolverOptions = { skewMode: 'bake' }) {
     this.projectId = uuid5(`project:${doc.sourceHash}`);
   }
 
@@ -183,7 +200,8 @@ export class Resolver {
       const drawings = this.buildLayer(id, li, layer, resolved[li], preH, (k, ci) => above(li, k, ci));
       layers.push({ id: lid, name: layer.name || `Layer ${li + 1}`, drawings });
     });
-    const clip: TSClip = { id, name, isScene, layers, backgroundId: uuid5(`${id}|BG`, this.projectId), frames: srcFrames.length };
+    const blendsInside = resolved.some((fr) => fr.some((els) => (els ?? []).some((e) => e.inst?.bm !== undefined)));
+    const clip: TSClip = { id, name, isScene, layers, backgroundId: uuid5(`${id}|BG`, this.projectId), frames: srcFrames.length, blendsInside };
     this.clips.set(id, clip);
     this.clipOrder.push(id);
   }
@@ -249,6 +267,8 @@ export class Resolver {
         const Me2 = eff(tweenEnd.matrix);
         const d2 = decompose(Me2);
         const h2 = this.shearOf(d2.h, true);
+        // Rotation/scale are interpolated about the START keyframe's transformation point; its end position is where the
+        // end matrix puts that same local point, so both keyframes are reproduced exactly.
         const p2 = apply(Me2, e.tp);
         let delta = d2.rot - dec.rot;
         const mode = f.tween.rotate;
@@ -256,12 +276,21 @@ export class Resolver {
         else if (mode === 'counter-clockwise') { delta = -((((-delta) % TWO_PI) + TWO_PI) % TWO_PI) - TWO_PI * f.tween.rotateTimes; }
         else delta = normPi(delta);
         const lerp = (a: number, b: number) => a + (b - a) * t;
-        st = {
-          ...st, p: [lerp(st.p[0], p2[0]), lerp(st.p[1], p2[1])], rot: dec.rot + delta * t,
-          sx: lerp(dec.sx, d2.sx), sy: lerp(dec.sy, d2.sy), h: lerp(h, h2), alpha: lerp(e.alpha, tweenEnd.alpha),
-        };
-        this.diag.approx('TWEEN_BAKED', 'Motion tweens are baked per frame; easing model p=t+e·t(1−t) is unverified against Animate output', 1);
-        this.stats.tweenFramesBaked++;
+        const at = (u: number): InstState => ({
+          ...st, p: [st.p[0] + (p2[0] - st.p[0]) * u, st.p[1] + (p2[1] - st.p[1]) * u], rot: dec.rot + delta * u,
+          sx: dec.sx + (d2.sx - dec.sx) * u, sy: dec.sy + (d2.sy - dec.sy) * u, h: h + (h2 - h) * u, alpha: e.alpha + (tweenEnd.alpha - e.alpha) * u,
+        });
+        // Guard: the interpolation must land exactly on both keyframes. If it does not (a matrix the model cannot
+        // represent), hold the start keyframe and say so, instead of producing a jumping in-between.
+        const err = Math.max(stateError(at(0), Me, dec.h), stateError(at(1), Me2, d2.h));
+        if (err > 0.05) {
+          this.diag.warn('TWEEN_GUARD', `Motion tween in "${e.lib}" could not be interpolated exactly (keyframe mismatch ${rnd(err)}px): held at the start keyframe`, 1);
+        } else {
+          st = at(t);
+          void lerp;
+          this.diag.approx('TWEEN_BAKED', 'Motion tweens are baked per frame; easing model p=t+e·t(1−t) is unverified against Animate output', 1);
+          this.stats.tweenFramesBaked++;
+        }
       }
       const sig = `I${e.lib}|${rnd(st.pv[0])},${rnd(st.pv[1])}|${rnd(st.p[0])},${rnd(st.p[1])}|${rnd(st.rot)}|${rnd(st.sx)},${rnd(st.sy)}|h${rnd(st.h)}|${rnd(st.alpha)}|${this.frameKey(sym, st.symFrame, st.h)}|b${st.bm ?? ''}|${JSON.stringify(st.fx)}`;
       out.push({ sig, inst: st });
@@ -294,7 +323,12 @@ export class Resolver {
           const sym = this.doc.symbols.get(el.inst.lib)!;
           const target = this.clipFor(sym, el.inst.symFrame, el.inst.h);
           if (target) {
-            content.push({ id: cid, c: { kind: 'clip', ref: { clipId: target, pv: [el.inst.pv[0] + el.inst.h * el.inst.pv[1], el.inst.pv[1]], p: el.inst.p, rot: el.inst.rot, sx: el.inst.sx, sy: el.inst.sy, alpha: el.inst.alpha, name: el.inst.lib, blend: el.inst.bm, effects: el.inst.fx.length ? el.inst.fx : undefined } } });
+            // Blend isolation: a symbol whose own content uses blend modes is shown as an isolated group (ToonSquid Normal,
+            // bM 0) instead of the default Pass Through. Otherwise its blended layers mix with whatever lies outside it
+            // (the white Background), e.g. BF's miss poses turning washed-out lavender. Its own blend mode wins if set.
+            const isolate = el.inst.bm === undefined && this.clips.get(target)?.blendsInside === true;
+            if (isolate) this.diag.info('BLEND_ISOLATED', 'Symbols that contain blend modes are written as isolated groups (Normal instead of Pass Through) so their blends stay inside the symbol', 1);
+            content.push({ id: cid, c: { kind: 'clip', ref: { clipId: target, pv: [el.inst.pv[0] + el.inst.h * el.inst.pv[1], el.inst.pv[1]], p: el.inst.p, rot: el.inst.rot, sx: el.inst.sx, sy: el.inst.sy, alpha: el.inst.alpha, name: el.inst.lib, blend: isolate ? 0 : el.inst.bm, effects: el.inst.fx.length ? el.inst.fx : undefined } } });
             this.stats.clipLayers++;
           }
         }
