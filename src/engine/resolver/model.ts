@@ -11,7 +11,9 @@ export type TSEffect =
   | { kind: 'gaussianBlur'; r: number }
   | { kind: 'dropShadow'; r: number; os: [number, number]; c: { r: number; g: number; b: number } }
   | { kind: 'adjustments'; h: number; s: number; b: number; c: number };
-export interface ClipRef { clipId: string; pv: [number, number]; p: [number, number]; rot: number; sx: number; sy: number; alpha: number; name: string; blend?: number; effects?: TSEffect[]; }
+export interface ClipRef { clipId: string; pv: [number, number]; p: [number, number]; rot: number; sx: number; sy: number; alpha: number; name: string; blend?: number; effects?: TSEffect[];
+  /** Symbol layer "Time": 1-based clip frame at which playback starts in this drawing (K track "ti"). Default 1. */
+  time?: number; }
 
 /** ToonSquid Perspective effect: corner displacements c0..c3 = TL, TR, BL, BR (normalised by layer bounds). */
 export interface PerspectiveEffect { c: [[number, number], [number, number], [number, number], [number, number]]; }

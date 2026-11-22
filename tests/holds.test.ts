@@ -17,14 +17,40 @@ function xfl(): Uint8Array {
   return zipSync({ 'DOMDocument.xml': strToU8(doc), 'LIBRARY/Blink.xml': strToU8(sym), 'h.xfl': strToU8('PROXY-CS5') }, { level: 0 });
 }
 
-describe('held drawings (ToonSquid exposure)', () => {
-  it('frames that look the same become ONE drawing held over them, sharing one clip', async () => {
+/** Plays the written project back like ToonSquid (Normal loop, Time = start frame) and returns the fill colour shown. */
+function shown(project: { clips: { id: string; isScene: boolean; layers: { drawings: { s: number; e: number; content: { c: any }[] }[] }[] }[] }, clipId: string, frame: number): string {
+  const clip = project.clips.find((c) => c.id === clipId)!;
+  const len = Math.max(...clip.layers.flatMap((l) => l.drawings.map((d) => d.e)), 1);
+  for (const l of clip.layers) for (const d of l.drawings) {
+    if (frame < d.s || frame > d.e) continue;
+    const c = d.content[0].c;
+    if (c.kind === 'vector') { const f = c.items.find((i: any) => i.kind === 'fill'); return `${Math.round(f.color.r * 255)},${Math.round(f.color.g * 255)},${Math.round(f.color.b * 255)}`; }
+    const sub = project.clips.find((x) => x.id === c.ref.clipId)!;
+    const sl = Math.max(...sub.layers.flatMap((ll) => ll.drawings.map((dd) => dd.e)), 1);
+    return shown(project, c.ref.clipId, (((c.ref.time ?? 1) - 1 + frame - d.s) % sl) + 1);
+  }
+  void len; return '-';
+}
+const RED = '255,0,0', GREEN = '0,255,0', BLUE = '0,0,255', YELLOW = '255,255,0';
+
+describe('animated symbols (ToonSquid symbol layers)', () => {
+  it('native: one drawing plays the symbol clip, which holds all its frames', async () => {
     const out = convertAnalysis(analyzeInput(xfl(), 'h.fla'), await nodeSql());
     expect(out.report.ok).toBe(true);
     const scene = out.project.clips.find((c) => c.isScene)!;
-    const ranges = scene.layers[0].drawings.map((d) => [d.s, d.e]);
-    expect(ranges).toEqual([[1, 8], [9, 12]]);                 // not 12 one-frame drawings
-    expect(out.project.clips.filter((c) => !c.isScene)).toHaveLength(2); // one snapshot per distinct picture
+    expect(scene.layers[0].drawings.map((d) => [d.s, d.e])).toEqual([[1, 12]]);
+    const syms = out.project.clips.filter((c) => !c.isScene);
+    expect(syms).toHaveLength(1);
+    expect(syms[0].name).toBe('Blink');
+    expect(syms[0].layers[0].drawings.map((d) => [d.s, d.e])).toEqual([[1, 8], [9, 12]]);
+    const seq = Array.from({ length: 12 }, (_, k) => shown(out.project, scene.id, k + 1));
+    expect(seq).toEqual([...Array(8).fill(RED), ...Array(4).fill(BLUE)]);
+  });
+  it('snapshot mode still gives held drawings of still clips', async () => {
+    const out = convertAnalysis(analyzeInput(xfl(), 'h.fla'), await nodeSql(), undefined, { symbolPlayback: 'snapshot' });
+    const scene = out.project.clips.find((c) => c.isScene)!;
+    expect(scene.layers[0].drawings.map((d) => [d.s, d.e])).toEqual([[1, 8], [9, 12]]);
+    expect(out.project.clips.filter((c) => !c.isScene)).toHaveLength(2);
   });
 });
 
@@ -42,11 +68,10 @@ describe('movie clips across keyframes', () => {
     const bytes = zipSync({ 'DOMDocument.xml': strToU8(doc), 'LIBRARY/Loop.xml': strToU8(mc), 'm.xfl': strToU8('PROXY-CS5') }, { level: 0 });
     const out = convertAnalysis(analyzeInput(bytes, 'm.fla'), await nodeSql());
     const scene = out.project.clips.find((c) => c.isScene)!;
-    const colorOf = (clipId: string) => { const c = out.project.clips.find((x) => x.id === clipId)!; const v = c.layers[0].drawings[0].content[0].c; return v.kind === 'vector' && v.items[0].kind === 'fill' ? Math.round(v.items[0].color.g * 255) * 1000 + Math.round(v.items[0].color.r * 255) : -1; };
-    const seq: number[] = [];
-    for (const d of scene.layers[0].drawings) for (let k = d.s; k <= d.e; k++) { const c = d.content[0].c; if (c.kind === 'clip') seq.push(colorOf(c.ref.clipId)); }
-    // frames 1..6 must show loop frames 1,2,3,4,1,2 (continuous), not 1,2,1,2,3,4 (restarted at frame 3)
-    const f = [255, 255000, 0, 255255];
-    expect(seq).toEqual([f[0], f[1], f[2], f[3], f[0], f[1]]);
+    // two drawings (it moves at frame 3); the second starts the clip at its frame 3 (Time) instead of restarting
+    expect(scene.layers[0].drawings.map((d) => [d.s, d.e])).toEqual([[1, 2], [3, 6]]);
+    const seq = Array.from({ length: 6 }, (_, k) => shown(out.project, scene.id, k + 1));
+    // frames 1..6 must show loop frames 1,2,3,4,1,2 (continuous), not 1,2,1,2,3,4
+    expect(seq).toEqual([RED, GREEN, BLUE, YELLOW, RED, GREEN]);
   });
 });

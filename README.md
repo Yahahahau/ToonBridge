@@ -30,7 +30,7 @@ If you animate in Adobe Animate (formerly Flash) and want to continue in ToonSqu
 3. Choose how skewed parts should be handled, then press **Convert**.
 4. **Download** the `.tsproj`, open it in ToonSquid, and read the **conversion report**.
 
-Older binary `.fla` files aren't supported yet. In Animate, use *File ▸ Save As ▸ Animate Uncompressed Document (.xfl)* and zip the folder.
+Older binary `.fla` files (Flash 5 – CS4) are detected but not converted directly: see [Legacy binary FLA](#reliability) for two ways to turn them into XFL first.
 
 ## The app
 
@@ -43,8 +43,8 @@ ToonSquid's file format isn't publicly documented, so everything here is derived
 | Status | What |
 | --- | --- |
 | **Structure-verified** (matches app-made files and is re-checked by the validator) | ZIP/SQLite structure and schemas, vector node layout, frame ranges, layer/drawing/clip references |
-| **Experimental** (inferred, not yet confirmed inside ToonSquid) | Clip-instance transforms, motion-tween easing, z-order, stroke `jS/cS`, symbol playback (frames are snapshotted instead), **skew via the Perspective effect**, **seam hiding**, and — most importantly — **opening a generated file in the app** |
-| **Not converted** (always reported) | Inner shadows/glows, bevels, tint/advanced colour effects, Invert/Alpha/Erase blends (see [Filters & effects](#filters--effects-animate-vs-toonsquid)), masks, gradient/bitmap fills, text, audio/video, shape tweens, tint/advanced colour effects, binary FLA |
+| **Experimental** (inferred, not yet confirmed inside ToonSquid) | Clip-instance transforms, motion-tween easing, z-order, stroke `jS/cS`, **native symbol playback** (the clip *Time* track), **skew via the Perspective effect**, **seam hiding**, and — most importantly — **opening a generated file in the app** |
+| **Not converted** (always reported) | Inner shadows/glows, bevels, tint/advanced colour effects, Invert/Alpha/Erase blends (see [Filters & effects](#filters--effects-animate-vs-toonsquid)), masks, gradient/bitmap fills, text, audio/video, shape tweens, legacy binary FLA (detected and explained, see below) |
 
 **Skew.** ToonSquid has no skew in its transform, so skewed instances are converted with its *Perspective* effect (layer type 121 + corner offsets), whose layout was decoded from an app-made sample. Rendering the written file back matches Animate's own matrices (mean error ≈ 7×10⁻⁵, versus 1.8×10⁻² when skew is ignored), but that only proves the encode/decode maths agree — **not** that ToonSquid interprets the effect the same way. Two safer alternatives are available in the UI: *Bake into paths* (exact, larger file) and *Ignore skew*.
 
@@ -67,7 +67,15 @@ Visible edges stay where Animate put them: against an 8× supersampled Animate r
 
 **Held drawings.** Like ToonSquid's own timeline, a picture that doesn't change is **one drawing held over several frames** (`s..e`), not a new drawing per frame. Frames of a symbol that look the same (a held keyframe, a loop landing on the same picture) share one snapshot clip, so the drawing that shows them can be held too. On the Boyfriend sample: 484 → 205 clips, 171 → 68 scene drawings, 97 → 53 MB, and all 26 frames render pixel-identical to before.
 
-Other limits: conversion runs on the main thread (big projects freeze the page briefly), and output can be large because animated symbols are baked into per-frame snapshots.
+**Animated symbols as clips** (default). Each animated symbol becomes **one clip with all of its frames**, like a symbol in the Animate library, and plays inside a symbol layer of the parent timeline. A run of frames where the symbol simply plays on (+1 frame each frame, looping) is one drawing; its clip *Time* (start frame) is written as a `ti` keyframe track. Held frames and frames with baked skew still use a still snapshot. On the Boyfriend sample: 204 → 85 clips (27 with real animation), 68 → 8 scene drawings, 50.9 → 39.4 MB, and all 26 frames render pixel-identical to snapshot mode. Not yet confirmed in the app: how ToonSquid counts *Time*. If playback looks shifted, turn off *Animated symbols as clips* to get the old snapshot output.
+
+**Legacy binary FLA (Flash 5, MX, MX 2004, 8, CS3, CS4).** These are OLE2 compound files, not ZIP. ToonBridge reads the container safely (size, chain-loop and range limits), reports the Flash version and stream counts, and stops with instructions instead of guessing. To convert one today:
+1. Open it in Animate and *Save As* `.fla` (CS5+) or `.xfl`, **or**
+2. Use [JPEXS FLA Convert](https://github.com/jindrapetrik/jpexs-fla-convert) (LGPL-2.1, Java): `convert --format CS6 --container xfl old.fla outdir`, then zip the folder and drop it in.
+
+Route 2 was tested on two CS4 files: both convert, keep names and keyframe animation, and frame 1 matches the XFL reference. JPEXS reports two losses: zero-length frames become 1 frame, and pages not linked to the library are skipped. Other Flash versions are untested (no sample files yet).
+
+Other limits: conversion runs on the main thread (big projects freeze the page briefly).
 
 ## Filters & effects: Animate vs. ToonSquid
 

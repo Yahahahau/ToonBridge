@@ -37,13 +37,13 @@ export function useConverter(onDone: (out: ConvertOutput, url: string, opts: { s
   /** Settings changed after a result: the result no longer matches, so go back to "ready". */
   const invalidate = useCallback(() => { if (phase === 'done' || phase === 'error') { clearResult(); setPhase(analysis ? 'ready' : 'idle'); } }, [phase, analysis, clearResult]);
 
-  const convert = useCallback(async (opts: { skewMode: SkewMode; seamUnderlay: boolean }) => {
+  const convert = useCallback(async (opts: { skewMode: SkewMode; seamUnderlay: boolean; nativeSymbols?: boolean }) => {
     if (!analysis) return;
     clearResult(); setPhase('converting'); setStage('prepare');
     await paint();
     try {
       const SQL = await getSql();
-      const res = await convertAnalysisAsync(analysis, SQL, setStage, paint, opts);
+      const res = await convertAnalysisAsync(analysis, SQL, setStage, paint, { skewMode: opts.skewMode, seamUnderlay: opts.seamUnderlay, symbolPlayback: opts.nativeSymbols === false ? 'snapshot' : 'native' });
       setOut(res);
       if (!res.report.ok) { setError('The converted file failed its own checks, so it can\'t be downloaded. See the report for details.'); setPhase('error'); return; }
       const u = URL.createObjectURL(new Blob([res.bytes as BlobPart], { type: 'application/octet-stream' }));

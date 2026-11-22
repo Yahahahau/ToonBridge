@@ -2,8 +2,8 @@ import { useCallback, useState } from 'react';
 import type { SkewMode } from '../engine';
 import { load, save } from './storage';
 
-export interface Settings { skewMode: SkewMode; seamUnderlay: boolean; keepHistory: boolean; }
-export const DEFAULT_SETTINGS: Settings = { skewMode: 'bake', seamUnderlay: true, keepHistory: true };
+export interface Settings { skewMode: SkewMode; seamUnderlay: boolean; keepHistory: boolean; nativeSymbols: boolean; }
+export const DEFAULT_SETTINGS: Settings = { skewMode: 'bake', seamUnderlay: true, keepHistory: true, nativeSymbols: true };
 const KEY = 'toonbridge.settings';
 
 export function useSettings(): [Settings, (patch: Partial<Settings>) => void, () => void] {

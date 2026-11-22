@@ -18,11 +18,14 @@ interface InstState { lib: string; pv: [number, number]; p: [number, number]; ro
 /** How skew (shear) in instance matrices is handled. ToonSquid transforms have no skew. */
 export type SkewMode = 'perspective' | 'bake' | 'off';
 /** seamUnderlay: draw thin strokes under edges shared by two fills (default on). */
-export interface ResolverOptions { skewMode: SkewMode; seamUnderlay?: boolean; }
+/** symbolPlayback: 'native' (default) = one clip per symbol holding all its frames, played by the symbol layer;
+ *  'snapshot' = the older one-clip-per-distinct-frame output. */
+export interface ResolverOptions { skewMode: SkewMode; seamUnderlay?: boolean; symbolPlayback?: 'native' | 'snapshot'; }
 /** Underlay stroke width in the shape's own units (px). Wide enough to cover a 1-px anti-aliasing band at 100 % zoom. */
 const SEAM_WIDTH = 1;
 const SHEAR_EPS = 2e-3; // |h| below this (~0.1°) is negligible
-interface ResolvedEl { sig: string; shape?: ShapeEl; inst?: InstState; }
+/** base: the sig without the symbol frame (same placement/look); used to detect continuous native playback. */
+interface ResolvedEl { sig: string; base: string; shape?: ShapeEl; inst?: InstState; }
 
 const TWO_PI = Math.PI * 2;
 const normPi = (a: number) => { let x = a % TWO_PI; if (x > Math.PI) x -= TWO_PI; if (x <= -Math.PI) x += TWO_PI; return x; };
@@ -161,6 +164,26 @@ export class Resolver {
     return id;
   }
 
+  private symLen(sym: SymbolDef): number { return Math.max(1, timelineLength(sym.timeline)); }
+
+  /**
+   * The symbol's whole timeline as ONE ToonSquid clip (all its frames), like a symbol in Animate's library. A symbol
+   * layer then plays it over time; see buildLayer. Static symbols reuse their single-frame clip.
+   */
+  private fullClipFor(sym: SymbolDef, h = 0): string | null {
+    if (this.isStatic(sym)) return this.clipFor(sym, 0, h);
+    const id = uuid5(`full:${sym.name}` + (h ? `|h${rnd(h)}` : ''), this.projectId);
+    if (this.clips.has(id)) return id;
+    if (this.building.has(id)) { this.diag.loss('SYMBOL_CYCLE', `Recursive symbol reference to "${sym.name}" skipped`); return null; }
+    this.building.add(id);
+    const len = this.symLen(sym);
+    this.buildClip(id, this.cleanName(sym.name), sym.timeline, Array.from({ length: len }, (_, k) => k), false, h);
+    this.building.delete(id);
+    this.stats.symbolClips++;
+    this.stats.animatedClips = (this.stats.animatedClips ?? 0) + 1;
+    return id;
+  }
+
   private nameCount = new Map<string, number>();
   /**
    * Library names as a person would write them: the symbol's own name (without Animate library folders), and
@@ -266,7 +289,7 @@ export class Resolver {
       }
     }
     for (const e of f.elements) {
-      if (e.type === 'shape') { out.push({ sig: `S${this.shapeId(e)}`, shape: e }); continue; }
+      if (e.type === 'shape') { const sig = `S${this.shapeId(e)}`; out.push({ sig, base: sig, shape: e }); continue; }
       const sym = this.doc.symbols.get(e.lib);
       if (!sym) { this.diag.loss('SYMBOL_UNRESOLVED', `Instance of unknown symbol "${e.lib}" skipped`); continue; }
       const len = Math.max(1, timelineLength(sym.timeline));
@@ -314,8 +337,8 @@ export class Resolver {
           this.stats.tweenFramesBaked++;
         }
       }
-      const sig = `I${e.lib}|${rnd(st.pv[0])},${rnd(st.pv[1])}|${rnd(st.p[0])},${rnd(st.p[1])}|${rnd(st.rot)}|${rnd(st.sx)},${rnd(st.sy)}|h${rnd(st.h)}|${rnd(st.alpha)}|${this.frameKey(sym, st.symFrame, st.h)}|b${st.bm ?? ''}|${JSON.stringify(st.fx)}`;
-      out.push({ sig, inst: st });
+      const base = `I${e.lib}|${rnd(st.pv[0])},${rnd(st.pv[1])}|${rnd(st.p[0])},${rnd(st.p[1])}|${rnd(st.rot)}|${rnd(st.sx)},${rnd(st.sy)}|h${rnd(st.h)}|${rnd(st.alpha)}|b${st.bm ?? ''}|${JSON.stringify(st.fx)}`;
+      out.push({ sig: `${base}|${this.frameKey(sym, st.symFrame, st.h)}`, base, inst: st });
     }
     return out;
   }
@@ -323,8 +346,9 @@ export class Resolver {
   private buildLayer(clipId: string, li: number, layer: Layer, frames: (ResolvedEl[] | null)[], preH: number, above: (k: number, ci: number) => ShapeEl[]): TSDrawing[] {
     const drawings: TSDrawing[] = [];
     let runStart = -1;
-    let runSig = '';
+    let runSig = ""; void runSig;
     let runEls: ResolvedEl[] = [];
+    let runModes: ('same' | 'play')[] = [];
     const flush = (endK: number) => {
       if (runStart < 0) return;
       const s = runStart + 1, e = endK + 1; // R4: 1-based inclusive
@@ -343,28 +367,53 @@ export class Resolver {
           if (c) { content.push({ id: cid, c }); this.stats.vectorLayers++; }
         } else if (el.inst) {
           const sym = this.doc.symbols.get(el.inst.lib)!;
-          const target = this.clipFor(sym, el.inst.symFrame, el.inst.h);
+          // Native playback: the full symbol clip, started at the right frame (Time). Used when the drawing plays the
+          // symbol continuously, and for one-frame drawings (no extra still clip needed). A symbol HELD on one frame
+          // for several frames (single frame / end of play once) still gets a still clip of that frame.
+          const animated = !this.isStatic(sym);
+          const oneFrame = endK === runStart;
+          const useFull = this.opts.symbolPlayback !== 'snapshot' && animated && (runModes[ci] === 'play' || (oneFrame && el.inst.h === 0));
+          const target = useFull ? this.fullClipFor(sym, el.inst.h) : this.clipFor(sym, el.inst.symFrame, el.inst.h);
+          const time = useFull ? el.inst.symFrame + 1 : undefined;
+          if (useFull && runModes[ci] === 'play') this.diag.info('SYMBOL_NATIVE', 'Animated symbols are written as clips with all their frames and play inside symbol layers (start frame set with Time)', 1);
           if (target) {
             // Blend isolation: a symbol whose own content uses blend modes is shown as an isolated group (ToonSquid Normal,
             // bM 0) instead of the default Pass Through. Otherwise its blended layers mix with whatever lies outside it
             // (the white Background), e.g. BF's miss poses turning washed-out lavender. Its own blend mode wins if set.
             const isolate = el.inst.bm === undefined && this.clips.get(target)?.blendsInside === true;
             if (isolate) this.diag.info('BLEND_ISOLATED', 'Symbols that contain blend modes are written as isolated groups (Normal instead of Pass Through) so their blends stay inside the symbol', 1);
-            content.push({ id: cid, c: { kind: 'clip', ref: { clipId: target, pv: [el.inst.pv[0] + el.inst.h * el.inst.pv[1], el.inst.pv[1]], p: el.inst.p, rot: el.inst.rot, sx: el.inst.sx, sy: el.inst.sy, alpha: el.inst.alpha, name: el.inst.lib, blend: isolate ? 0 : el.inst.bm, effects: el.inst.fx.length ? el.inst.fx : undefined } } });
+            content.push({ id: cid, c: { kind: 'clip', ref: { clipId: target, pv: [el.inst.pv[0] + el.inst.h * el.inst.pv[1], el.inst.pv[1]], p: el.inst.p, rot: el.inst.rot, sx: el.inst.sx, sy: el.inst.sy, alpha: el.inst.alpha, name: el.inst.lib, blend: isolate ? 0 : el.inst.bm, effects: el.inst.fx.length ? el.inst.fx : undefined, time } } });
             this.stats.clipLayers++;
           }
         }
       });
       if (content.length) { drawings.push({ id: did, s, e, content }); this.stats.drawings++; }
-      runStart = -1; runSig = ''; runEls = [];
+      runStart = -1; runSig = ''; runEls = []; runModes = [];
     };
+    const native = this.opts.symbolPlayback !== 'snapshot';
+    /** b is a's next frame of continuous playback: same placement and the symbol advanced by exactly one frame (wrapping like a loop). */
+    const plays = (a: ResolvedEl, b: ResolvedEl): boolean => {
+      if (!a.inst || !b.inst || a.base !== b.base) return false;
+      const sym = this.doc.symbols.get(a.inst.lib);
+      if (!sym || this.isStatic(sym)) return false;
+      return b.inst.symFrame === (a.inst.symFrame + 1) % this.symLen(sym);
+    };
+    let modes: ('same' | 'play')[] = [];
+    let prev: ResolvedEl[] | null = null;
     for (let k = 0; k < frames.length; k++) {
       const els = frames[k];
       const sig = els && els.length ? els.map((x) => x.sig).join(';') : '';
-      if (sig !== runSig) {
-        flush(k - 1);
-        if (sig) { runStart = k; runSig = sig; runEls = els!; }
+      let cont = false;
+      if (runStart >= 0 && els && prev && els.length === prev.length) {
+        if (k === runStart + 1 && native) modes = els.map((el, i) => (plays(prev![i], el) ? 'play' : 'same'));
+        cont = els.every((el, i) => (modes[i] === 'play' ? plays(prev![i], el) : el.sig === prev![i].sig));
       }
+      if (!cont) {
+        flush(k - 1);
+        modes = els ? els.map(() => 'same') : [];
+        if (sig) { runStart = k; runSig = sig; runEls = els!; runModes = modes; }
+      } else runModes = modes;
+      prev = els;
     }
     flush(frames.length - 1);
     return drawings;

@@ -84,6 +84,10 @@ export function ConvertPage({ c, opts, setOpts }: { c: ConverterApi; opts: Setti
                 </div>
               </fieldset>
               <label className={`check-row ${busy || !c.analysis ? 'disabled' : ''}`}>
+                <input type="checkbox" checked={opts.nativeSymbols} disabled={busy || !c.analysis} onChange={(e) => change({ nativeSymbols: e.target.checked })} />
+                <span><strong>Animated symbols as clips</strong><span className="muted">Each symbol becomes one clip with all its frames, played in a symbol layer, like the Animate library. Off: one still clip per frame.</span></span>
+              </label>
+              <label className={`check-row ${busy || !c.analysis ? 'disabled' : ''}`}>
                 <input type="checkbox" checked={opts.seamUnderlay} disabled={busy || !c.analysis} onChange={(e) => change({ seamUnderlay: e.target.checked })} />
                 <span><strong>Hide hairline seams</strong><span className="muted">Fills tuck slightly under the lines above them, so no thin gaps show when zooming in. Visible edges don't move.</span></span>
               </label>
@@ -94,7 +98,7 @@ export function ConvertPage({ c, opts, setOpts }: { c: ConverterApi; opts: Setti
             <Box title="Convert" className="sticky">
               {!c.analysis && c.phase !== 'reading' && <EmptyState icon="upload" title="No project yet">Import a project to see its details and convert it.</EmptyState>}
               {c.analysis && (c.phase === 'ready' || c.phase === 'error') && (
-                <Button variant="primary" size="lg" icon="bolt" className="block" onClick={() => void c.convert({ skewMode: opts.skewMode, seamUnderlay: opts.seamUnderlay })}>
+                <Button variant="primary" size="lg" icon="bolt" className="block" onClick={() => void c.convert({ skewMode: opts.skewMode, seamUnderlay: opts.seamUnderlay, nativeSymbols: opts.nativeSymbols })}>
                   {c.phase === 'error' ? 'Try again' : 'Convert to .tsproj'}
                 </Button>
               )}

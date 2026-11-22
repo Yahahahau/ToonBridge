@@ -65,6 +65,8 @@ function contentLayer(id: string, drawingId: string, c: Content): { type: number
   const d: Record<string, unknown> = { cl: { v: 1, id: r.clipId }, Id: id, V: 3, Na: r.name, DI: drawingId, LD: FIXED_DATE, tf, v: 2 };
   if (Math.abs(r.alpha - 1) > 1e-9) d.op = rnd(r.alpha);
   if (r.blend !== undefined) d.bM = r.blend;
+  // Time (start frame) as a constant keyframe track, in exactly the form an app-made file stores it.
+  if (r.time !== undefined && r.time !== 1) d.K = ['ti', { f: [0], v: [r.time], t: 1, e: [{ tp: 13, iC: [1, 1], oC: [0, 0] }] }];
   if (r.effects?.length) d.Ef = r.effects.map((e, i) => fxId(id, i, e.kind));
   return { type: LT.CLIP, data: d };
 }

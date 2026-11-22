@@ -15,18 +15,24 @@ import { readZipTolerant } from './zip/reader';
 export interface Analysis { fileName: string; doc: Doc; diag: Diagnostics; info: ProjectInfo; zipMode: string; zipWarnings: string[]; }
 export interface ConvertOutput { bytes: Uint8Array; fileName: string; report: Report; project: TSProject; }
 
-const isCfb = (b: Uint8Array) => [0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1].every((v, i) => b[i] === v);
-const isZip = (b: Uint8Array) => b[0] === 0x50 && b[1] === 0x4b;
+import { detectInput, type LegacyFlaInfo } from './legacy/detect';
 
 export type { SkewMode };
 export class UnsupportedInputError extends Error {}
+/** A legacy binary FLA was recognised. `info` describes it; it is not converted in the browser yet (see README "Legacy binary FLA"). */
+export class LegacyFlaError extends UnsupportedInputError { constructor(msg: string, readonly info: LegacyFlaInfo) { super(msg); } }
 
 /** Reader stage: bytes -> IR. Throws UnsupportedInputError / Error with a user-readable English message. */
 export function analyzeInput(bytes: Uint8Array, fileName: string): Analysis {
-  if (isCfb(bytes)) {
-    throw new UnsupportedInputError('This is a binary FLA (OLE2) file, which isn\'t supported yet. In Animate, choose File ▸ Save As ▸ "Animate Uncompressed Document (*.xfl)", zip the XFL folder, and import the ZIP.');
+  const fmt = detectInput(bytes);
+  if (fmt.kind === 'legacy-fla') {
+    const i = fmt.info;
+    throw new LegacyFlaError(`This is a ${i.version} binary FLA (${i.counts.symbols} symbols, ${i.counts.pages} scene page${i.counts.pages === 1 ? '' : 's'}). Binary FLA can't be converted in the browser yet. Convert it to XFL first: open and save it in Animate, or use JPEXS FLA Convert ("convert --format CS6 --container xfl"), then zip the XFL folder and import the ZIP.`, i);
   }
-  if (!isZip(bytes)) throw new UnsupportedInputError('Unsupported file type. Import a ZIP of an XFL project, or a ZIP-based .fla.');
+  if (fmt.kind === 'corrupt') throw new UnsupportedInputError(`This looks like a binary FLA, but the file is damaged: ${fmt.reason}`);
+  if (fmt.kind === 'ole2-other') throw new UnsupportedInputError(`Not a Flash file: ${fmt.reason}`);
+  if (fmt.kind === 'xfl-entry') throw new UnsupportedInputError('This is only the small .xfl entry file. Zip the whole XFL folder (with DOMDocument.xml and LIBRARY) and import the ZIP.');
+  if (fmt.kind !== 'zip') throw new UnsupportedInputError('Unsupported file type. Import a ZIP of an XFL project, or a ZIP-based .fla.');
   const zip = readZipTolerant(bytes);
   const diag = new Diagnostics();
   for (const w of zip.warnings) diag.warn('ZIP', w);
@@ -34,12 +40,12 @@ export function analyzeInput(bytes: Uint8Array, fileName: string): Analysis {
   return { fileName, doc, diag, info: describeDoc(doc), zipMode: zip.mode, zipWarnings: zip.warnings };
 }
 
-export interface ConvertOptions { seamUnderlay?: boolean; skewMode?: SkewMode; }
+export interface ConvertOptions { symbolPlayback?: 'native' | 'snapshot'; seamUnderlay?: boolean; skewMode?: SkewMode; }
 
 /** The pipeline as a generator: yields the name of each stage before running it, so a UI can paint between stages. */
 function* convertSteps(a: Analysis, SQL: SqlJsStatic, options: ConvertOptions): Generator<string, ConvertOutput, void> {
   yield 'resolve';
-  const project = new Resolver(a.doc, a.diag, { skewMode: options.skewMode ?? 'bake', seamUnderlay: options.seamUnderlay ?? true }).run();
+  const project = new Resolver(a.doc, a.diag, { skewMode: options.skewMode ?? 'bake', seamUnderlay: options.seamUnderlay ?? true, symbolPlayback: options.symbolPlayback ?? 'native' }).run();
   yield 'write';
   const bytes = writeTsproj(SQL, project);
   yield 'validate';
