@@ -1,0 +1,861 @@
+{
+ "note": "Derived from the binary FLA records (scripts/audit/SourceTimelines.java): the source truth for the 37 zero-length frames in BoyFriend_Assets.fla and GF_assets.fla. A zero-length frame takes no time.",
+ "locations": [
+  {
+   "file": "BF",
+   "timeline": "BF Dead Loop",
+   "layerIndex": 0,
+   "layer": "Layer 2",
+   "zeroFrames": 1,
+   "firstArtFrame": 1,
+   "layerEnd": 34,
+   "timelineLength": 34,
+   "keyframes": [
+    [
+     0,
+     34
+    ]
+   ]
+  },
+  {
+   "file": "BF",
+   "timeline": "BF Dead Loop",
+   "layerIndex": 1,
+   "layer": "Layer 3",
+   "zeroFrames": 1,
+   "firstArtFrame": 1,
+   "layerEnd": 34,
+   "timelineLength": 34,
+   "keyframes": [
+    [
+     0,
+     34
+    ]
+   ]
+  },
+  {
+   "file": "BF",
+   "timeline": "BF Dead Loop",
+   "layerIndex": 2,
+   "layer": "retry",
+   "zeroFrames": 1,
+   "firstArtFrame": 1,
+   "layerEnd": 34,
+   "timelineLength": 34,
+   "keyframes": [
+    [
+     0,
+     34
+    ]
+   ]
+  },
+  {
+   "file": "BF",
+   "timeline": "BF Dead Loop",
+   "layerIndex": 3,
+   "layer": "Layer 6",
+   "zeroFrames": 1,
+   "firstArtFrame": 1,
+   "layerEnd": 34,
+   "timelineLength": 34,
+   "keyframes": [
+    [
+     0,
+     34
+    ]
+   ]
+  },
+  {
+   "file": "BF",
+   "timeline": "BF Dead Loop",
+   "layerIndex": 4,
+   "layer": "Layer 8",
+   "zeroFrames": 1,
+   "firstArtFrame": 1,
+   "layerEnd": 34,
+   "timelineLength": 34,
+   "keyframes": [
+    [
+     0,
+     34
+    ]
+   ]
+  },
+  {
+   "file": "BF",
+   "timeline": "BF Dead Loop",
+   "layerIndex": 5,
+   "layer": "Layer 9",
+   "zeroFrames": 1,
+   "firstArtFrame": 1,
+   "layerEnd": 34,
+   "timelineLength": 34,
+   "keyframes": [
+    [
+     0,
+     34
+    ]
+   ]
+  },
+  {
+   "file": "BF",
+   "timeline": "BF Dead Loop",
+   "layerIndex": 6,
+   "layer": "Layer 10",
+   "zeroFrames": 1,
+   "firstArtFrame": 1,
+   "layerEnd": 34,
+   "timelineLength": 34,
+   "keyframes": [
+    [
+     0,
+     34
+    ]
+   ]
+  },
+  {
+   "file": "BF",
+   "timeline": "BF dies",
+   "layerIndex": 10,
+   "layer": "Layer 2",
+   "zeroFrames": 1,
+   "firstArtFrame": 1,
+   "layerEnd": 58,
+   "timelineLength": 58,
+   "keyframes": [
+    [
+     0,
+     2
+    ],
+    [
+     2,
+     55
+    ],
+    [
+     57,
+     1
+    ]
+   ]
+  },
+  {
+   "file": "BF",
+   "timeline": "BF idle dance",
+   "layerIndex": 1,
+   "layer": "Layer 2",
+   "zeroFrames": 1,
+   "firstArtFrame": 1,
+   "layerEnd": 14,
+   "timelineLength": 14,
+   "keyframes": [
+    [
+     0,
+     2
+    ],
+    [
+     2,
+     2
+    ],
+    [
+     4,
+     10
+    ]
+   ]
+  },
+  {
+   "file": "BF",
+   "timeline": "BF idle dance",
+   "layerIndex": 2,
+   "layer": "Layer 3",
+   "zeroFrames": 1,
+   "firstArtFrame": 1,
+   "layerEnd": 14,
+   "timelineLength": 14,
+   "keyframes": [
+    [
+     0,
+     2
+    ],
+    [
+     2,
+     2
+    ],
+    [
+     4,
+     2
+    ],
+    [
+     6,
+     2
+    ],
+    [
+     8,
+     6
+    ]
+   ]
+  },
+  {
+   "file": "BF",
+   "timeline": "BF HEY!!",
+   "layerIndex": 1,
+   "layer": "Layer 2",
+   "zeroFrames": 1,
+   "firstArtFrame": 1,
+   "layerEnd": 26,
+   "timelineLength": 26,
+   "keyframes": [
+    [
+     0,
+     2
+    ],
+    [
+     2,
+     2
+    ],
+    [
+     4,
+     22
+    ]
+   ]
+  },
+  {
+   "file": "BF",
+   "timeline": "BF HEY!!",
+   "layerIndex": 2,
+   "layer": "Layer 3",
+   "zeroFrames": 1,
+   "firstArtFrame": 1,
+   "layerEnd": 26,
+   "timelineLength": 26,
+   "keyframes": [
+    [
+     0,
+     2
+    ],
+    [
+     2,
+     2
+    ],
+    [
+     4,
+     22
+    ]
+   ]
+  },
+  {
+   "file": "BF",
+   "timeline": "BF HEY!!",
+   "layerIndex": 3,
+   "layer": "BF idle dance Layer",
+   "zeroFrames": 1,
+   "firstArtFrame": 1,
+   "layerEnd": 26,
+   "timelineLength": 26,
+   "keyframes": [
+    [
+     0,
+     2
+    ],
+    [
+     2,
+     24
+    ]
+   ]
+  },
+  {
+   "file": "BF",
+   "timeline": "BF NOTE LEFT",
+   "layerIndex": 1,
+   "layer": "BF idle dance Layer",
+   "zeroFrames": 1,
+   "firstArtFrame": 1,
+   "layerEnd": 15,
+   "timelineLength": 15,
+   "keyframes": [
+    [
+     0,
+     2
+    ],
+    [
+     2,
+     12
+    ],
+    [
+     14,
+     1
+    ]
+   ]
+  },
+  {
+   "file": "BF",
+   "timeline": "BF NOTE LEFT",
+   "layerIndex": 2,
+   "layer": "Layer 3",
+   "zeroFrames": 1,
+   "firstArtFrame": 1,
+   "layerEnd": 15,
+   "timelineLength": 15,
+   "keyframes": [
+    [
+     0,
+     2
+    ],
+    [
+     2,
+     12
+    ],
+    [
+     14,
+     1
+    ]
+   ]
+  },
+  {
+   "file": "BF",
+   "timeline": "BF NOTE LEFT MISS",
+   "layerIndex": 3,
+   "layer": "BF idle dance Layer",
+   "zeroFrames": 1,
+   "firstArtFrame": 1,
+   "layerEnd": 1,
+   "timelineLength": 34,
+   "keyframes": [
+    [
+     0,
+     1
+    ]
+   ]
+  },
+  {
+   "file": "BF",
+   "timeline": "BF NOTE LEFT MISS",
+   "layerIndex": 4,
+   "layer": "Layer 3",
+   "zeroFrames": 1,
+   "firstArtFrame": 1,
+   "layerEnd": 1,
+   "timelineLength": 34,
+   "keyframes": [
+    [
+     0,
+     1
+    ]
+   ]
+  },
+  {
+   "file": "BF",
+   "timeline": "BF NOTE RIGHT",
+   "layerIndex": 1,
+   "layer": "BF idle dance Layer",
+   "zeroFrames": 1,
+   "firstArtFrame": 1,
+   "layerEnd": 62,
+   "timelineLength": 62,
+   "keyframes": [
+    [
+     0,
+     2
+    ],
+    [
+     2,
+     60
+    ]
+   ]
+  },
+  {
+   "file": "BF",
+   "timeline": "BF NOTE RIGHT",
+   "layerIndex": 2,
+   "layer": "Layer 3",
+   "zeroFrames": 1,
+   "firstArtFrame": 1,
+   "layerEnd": 62,
+   "timelineLength": 62,
+   "keyframes": [
+    [
+     0,
+     2
+    ],
+    [
+     2,
+     60
+    ]
+   ]
+  },
+  {
+   "file": "BF",
+   "timeline": "BF NOTE RIGHT MISS",
+   "layerIndex": 2,
+   "layer": "BF idle dance Layer",
+   "zeroFrames": 1,
+   "firstArtFrame": 1,
+   "layerEnd": 1,
+   "timelineLength": 46,
+   "keyframes": [
+    [
+     0,
+     1
+    ]
+   ]
+  },
+  {
+   "file": "BF",
+   "timeline": "BF NOTE RIGHT MISS",
+   "layerIndex": 3,
+   "layer": "Layer 3",
+   "zeroFrames": 1,
+   "firstArtFrame": 1,
+   "layerEnd": 1,
+   "timelineLength": 46,
+   "keyframes": [
+    [
+     0,
+     1
+    ]
+   ]
+  },
+  {
+   "file": "BF",
+   "timeline": "boyfriend attack",
+   "layerIndex": 1,
+   "layer": "Layer 2",
+   "zeroFrames": 1,
+   "firstArtFrame": 1,
+   "layerEnd": 7,
+   "timelineLength": 7,
+   "keyframes": [
+    [
+     0,
+     2
+    ],
+    [
+     2,
+     2
+    ],
+    [
+     4,
+     2
+    ],
+    [
+     6,
+     1
+    ]
+   ]
+  },
+  {
+   "file": "BF",
+   "timeline": "boyfriend attack",
+   "layerIndex": 2,
+   "layer": "Layer 3",
+   "zeroFrames": 1,
+   "firstArtFrame": 1,
+   "layerEnd": 7,
+   "timelineLength": 7,
+   "keyframes": [
+    [
+     0,
+     2
+    ],
+    [
+     2,
+     2
+    ],
+    [
+     4,
+     2
+    ],
+    [
+     6,
+     1
+    ]
+   ]
+  },
+  {
+   "file": "BF",
+   "timeline": "boyfriend attack",
+   "layerIndex": 3,
+   "layer": "Layer 4",
+   "zeroFrames": 1,
+   "firstArtFrame": 1,
+   "layerEnd": 7,
+   "timelineLength": 7,
+   "keyframes": [
+    [
+     0,
+     2
+    ],
+    [
+     2,
+     2
+    ],
+    [
+     4,
+     2
+    ],
+    [
+     6,
+     1
+    ]
+   ]
+  },
+  {
+   "file": "BF",
+   "timeline": "boyfriend attack",
+   "layerIndex": 4,
+   "layer": "Layer 5",
+   "zeroFrames": 1,
+   "firstArtFrame": 1,
+   "layerEnd": 7,
+   "timelineLength": 7,
+   "keyframes": [
+    [
+     0,
+     2
+    ],
+    [
+     2,
+     2
+    ],
+    [
+     4,
+     2
+    ],
+    [
+     6,
+     1
+    ]
+   ]
+  },
+  {
+   "file": "BF",
+   "timeline": "BF Dead confirm",
+   "layerIndex": 1,
+   "layer": "Layer 2",
+   "zeroFrames": 1,
+   "firstArtFrame": 1,
+   "layerEnd": 34,
+   "timelineLength": 34,
+   "keyframes": [
+    [
+     0,
+     34
+    ]
+   ]
+  },
+  {
+   "file": "BF",
+   "timeline": "BF Dead confirm",
+   "layerIndex": 2,
+   "layer": "Layer 3",
+   "zeroFrames": 1,
+   "firstArtFrame": 1,
+   "layerEnd": 34,
+   "timelineLength": 34,
+   "keyframes": [
+    [
+     0,
+     34
+    ]
+   ]
+  },
+  {
+   "file": "BF",
+   "timeline": "BF Dead confirm",
+   "layerIndex": 3,
+   "layer": "Layer 6",
+   "zeroFrames": 1,
+   "firstArtFrame": 1,
+   "layerEnd": 34,
+   "timelineLength": 34,
+   "keyframes": [
+    [
+     0,
+     34
+    ]
+   ]
+  },
+  {
+   "file": "BF",
+   "timeline": "BF Dead confirm",
+   "layerIndex": 4,
+   "layer": "Layer 8",
+   "zeroFrames": 1,
+   "firstArtFrame": 1,
+   "layerEnd": 34,
+   "timelineLength": 34,
+   "keyframes": [
+    [
+     0,
+     34
+    ]
+   ]
+  },
+  {
+   "file": "BF",
+   "timeline": "BF Dead confirm",
+   "layerIndex": 5,
+   "layer": "Layer 9",
+   "zeroFrames": 1,
+   "firstArtFrame": 1,
+   "layerEnd": 34,
+   "timelineLength": 34,
+   "keyframes": [
+    [
+     0,
+     34
+    ]
+   ]
+  },
+  {
+   "file": "BF",
+   "timeline": "BF Dead confirm",
+   "layerIndex": 6,
+   "layer": "Layer 10",
+   "zeroFrames": 1,
+   "firstArtFrame": 1,
+   "layerEnd": 34,
+   "timelineLength": 34,
+   "keyframes": [
+    [
+     0,
+     34
+    ]
+   ]
+  },
+  {
+   "file": "BF",
+   "timeline": "BF idle shaking",
+   "layerIndex": 1,
+   "layer": "Layer 2",
+   "zeroFrames": 1,
+   "firstArtFrame": 1,
+   "layerEnd": 4,
+   "timelineLength": 4,
+   "keyframes": [
+    [
+     0,
+     4
+    ]
+   ]
+  },
+  {
+   "file": "BF",
+   "timeline": "BF idle shaking",
+   "layerIndex": 2,
+   "layer": "Layer 3",
+   "zeroFrames": 1,
+   "firstArtFrame": 1,
+   "layerEnd": 4,
+   "timelineLength": 4,
+   "keyframes": [
+    [
+     0,
+     1
+    ],
+    [
+     1,
+     1
+    ],
+    [
+     2,
+     1
+    ],
+    [
+     3,
+     1
+    ]
+   ]
+  },
+  {
+   "file": "GF",
+   "timeline": "GF Dancing Beat",
+   "layerIndex": 1,
+   "layer": "Layer 2",
+   "zeroFrames": 1,
+   "firstArtFrame": 1,
+   "layerEnd": 30,
+   "timelineLength": 30,
+   "keyframes": [
+    [
+     0,
+     2
+    ],
+    [
+     2,
+     2
+    ],
+    [
+     4,
+     2
+    ],
+    [
+     6,
+     1
+    ],
+    [
+     7,
+     3
+    ],
+    [
+     10,
+     3
+    ],
+    [
+     13,
+     2
+    ],
+    [
+     15,
+     2
+    ],
+    [
+     17,
+     2
+    ],
+    [
+     19,
+     2
+    ],
+    [
+     21,
+     1
+    ],
+    [
+     22,
+     3
+    ],
+    [
+     25,
+     3
+    ],
+    [
+     28,
+     2
+    ]
+   ]
+  },
+  {
+   "file": "GF",
+   "timeline": "GF Dancing Beat",
+   "layerIndex": 2,
+   "layer": "Layer 3",
+   "zeroFrames": 1,
+   "firstArtFrame": 1,
+   "layerEnd": 30,
+   "timelineLength": 30,
+   "keyframes": [
+    [
+     0,
+     5
+    ],
+    [
+     5,
+     2
+    ],
+    [
+     7,
+     8
+    ],
+    [
+     15,
+     5
+    ],
+    [
+     20,
+     2
+    ],
+    [
+     22,
+     8
+    ]
+   ]
+  },
+  {
+   "file": "GF",
+   "timeline": "GF Dancing Beat",
+   "layerIndex": 4,
+   "layer": "Layer 4",
+   "zeroFrames": 1,
+   "firstArtFrame": 1,
+   "layerEnd": 30,
+   "timelineLength": 30,
+   "keyframes": [
+    [
+     0,
+     2
+    ],
+    [
+     2,
+     2
+    ],
+    [
+     4,
+     2
+    ],
+    [
+     6,
+     1
+    ],
+    [
+     7,
+     3
+    ],
+    [
+     10,
+     3
+    ],
+    [
+     13,
+     2
+    ],
+    [
+     15,
+     2
+    ],
+    [
+     17,
+     2
+    ],
+    [
+     19,
+     2
+    ],
+    [
+     21,
+     1
+    ],
+    [
+     22,
+     3
+    ],
+    [
+     25,
+     3
+    ],
+    [
+     28,
+     2
+    ]
+   ]
+  },
+  {
+   "file": "GF",
+   "timeline": "GF Cheer",
+   "layerIndex": 2,
+   "layer": "Layer 4",
+   "zeroFrames": 1,
+   "firstArtFrame": 1,
+   "layerEnd": 21,
+   "timelineLength": 21,
+   "keyframes": [
+    [
+     0,
+     2
+    ],
+    [
+     2,
+     19
+    ]
+   ]
+  }
+ ]
+}

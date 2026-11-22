@@ -5,3 +5,4 @@ dist
 .DS_Store
 tests/fixtures/*
 !tests/fixtures/README.md
+!tests/fixtures/jpexs/
