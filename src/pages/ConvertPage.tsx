@@ -30,7 +30,7 @@ export function ConvertPage({ c, opts, setOpts }: { c: ConverterApi; opts: Setti
   const info = c.analysis?.info;
   const layerCount = info ? info.scenes.reduce((n, s) => n + s.layers.length, 0) : 0;
   const diag = c.out?.report.diagnostics ?? [];
-  const counts = { loss: diag.filter((d) => d.severity === 'loss').length, approx: diag.filter((d) => d.severity === 'approx').length, warn: diag.filter((d) => d.severity === 'warn').length };
+  const counts = { loss: diag.filter((d) => d.severity === 'loss').length, approx: diag.filter((d) => d.severity === 'approx').length, unsupported: diag.filter((d) => d.severity === 'unsupported').length, warn: diag.filter((d) => d.severity === 'warn').length };
   const change = (p: Partial<Settings>) => { setOpts(p); c.invalidate(); };
 
   const crumbs = [{ label: 'Workspace', href: '#/convert' }, { label: 'Convert', href: '#/convert' }, ...(c.file ? [{ label: c.file.name }] : [])];
@@ -43,7 +43,7 @@ export function ConvertPage({ c, opts, setOpts }: { c: ConverterApi; opts: Setti
       <Tabs label="Conversion sections" value={tab} onChange={setTab} tabs={[
         { id: 'overview', label: 'Overview', icon: 'bolt' },
         { id: 'details', label: 'Project details', icon: 'layers', count: info ? layerCount : undefined, disabled: !info },
-        { id: 'report', label: 'Report', icon: 'report', count: c.out ? counts.loss + counts.approx : undefined, disabled: !c.out },
+        { id: 'report', label: 'Report', icon: 'report', count: c.out ? counts.loss + counts.unsupported + counts.approx + counts.warn : undefined, disabled: !c.out },
       ]} />
 
       {tab === 'details' && info && <ProjectDetails info={info} />}
@@ -112,6 +112,7 @@ export function ConvertPage({ c, opts, setOpts }: { c: ConverterApi; opts: Setti
                   <Banner tone="success" title="Converted and checked">Structure check passed. Not yet confirmed to open in the ToonSquid app.</Banner>
                   <div className="result-labels">
                     <Label tone={counts.loss ? 'danger' : 'success'}>{plural(counts.loss, 'item')} lost</Label>
+                    {counts.unsupported > 0 && <Label tone="attention">{counts.unsupported} unsupported</Label>}
                     <Label tone={counts.approx ? 'attention' : 'success'}>{counts.approx} approximated</Label>
                     {counts.warn > 0 && <Label tone="attention">{plural(counts.warn, 'warning')}</Label>}
                   </div>

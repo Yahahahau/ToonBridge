@@ -352,3 +352,13 @@ p { margin: 0 0 .75em; } p:last-child { margin-bottom: 0; }
 @keyframes pop { from { opacity: 0; transform: translateY(-4px) scale(.98); } }
 @keyframes bob { 50% { transform: translateY(-5px); } }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: .001ms !important; animation-iteration-count: 1 !important; transition-duration: .001ms !important; } }
+
+/* Report: locatable diagnostics */
+.diag-code { font: 600 12px/1.6 ui-monospace, SFMono-Regular, Menlo, monospace; padding: 0 6px; border-radius: 6px; background: var(--neutral-bg); color: var(--fg); flex: none; }
+.diag-locs { margin-top: 4px; font-size: 13px; }
+.diag-locs summary { cursor: pointer; color: var(--fg-muted); width: fit-content; }
+.diag-locs ul { list-style: none; margin: 6px 0 0; padding: 0 0 0 10px; border-left: 2px solid var(--border-muted); display: flex; flex-direction: column; gap: 3px; }
+.diag-locs li { overflow-wrap: anywhere; }
+.diag-where { font-weight: 600; }
+.row-title .row-text { flex: 1 1 220px; }
+@media (max-width: 560px) { .row-wrap:has(.diag-code) { flex-wrap: wrap; } .row-wrap:has(.diag-code) .row-stack { flex-basis: 100%; order: 3; } }

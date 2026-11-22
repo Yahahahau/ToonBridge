@@ -40,6 +40,17 @@ describe.skipIf(!have)('real Boyfriend_But_Better.fla (XFL, damaged central dire
     const a2 = convertAnalysis(analyzeInput(bytes, 'bf.fla'), SQL);
     expect(a2.report.output.sha1).toBe(a1.report.output.sha1);
   });
+  it('Phase B1 (diagnostics only) leaves the converted bytes unchanged', async () => {
+    // sha1 of the default conversion before Phase B1 (commit b3157d8). Update deliberately when a later phase changes output.
+    const SQL = await nodeSql();
+    const r = convertAnalysis(analyzeInput(new Uint8Array(readFileSync(fla!)), 'bf.fla'), SQL);
+    expect(r.report.output.sha1).toBe('dca54e90d49ba980d3cbfcdc3b719122f8ff2f38');
+    // Tween diagnostics count tweens: 15 interpolated, 6 symbol swaps, and no "unpaired" for last keyframes.
+    const d = (c: string) => r.report.diagnostics.filter((x) => x.code === c).reduce((n, x) => n + x.count, 0);
+    expect(d('TWEEN_BAKED')).toBe(15);
+    expect(d('TWEEN_SYMBOL_SWAP')).toBe(6);
+    expect(d('TWEEN_UNPAIRED')).toBe(0);
+  });
   it('scan-only recovery (central directory removed) yields the identical project', async () => {
     const SQL = await nodeSql();
     const bytes = new Uint8Array(readFileSync(fla!));

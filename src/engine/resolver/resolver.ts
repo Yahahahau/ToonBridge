@@ -8,7 +8,7 @@ import { shearEffect } from '../geometry/perspective';
 import type { Contour } from '../geometry/contours';
 import { CoverIndex, coveredChains } from '../geometry/cover';
 import { blendCode, planColor, planFilters, toTSEffects, TS_BLEND_MODES, type PlannedEffect } from '../effects/plan';
-import { Diagnostics } from '../diagnostics';
+import { Diagnostics, type DiagLocation } from '../diagnostics';
 import { chainToContour, fillContours, seamContours, strokeContours, usedFillIds, usedStrokeIds } from '../geometry/contours';
 import { hex, rnd, sha1, uuid5 } from '../util';
 import type { Content, TSClip, TSDrawing, TSEffect, TSLayer, TSProject } from './model';
@@ -67,8 +67,28 @@ export class Resolver {
   };
   private projectId: string;
 
+  /** Source owner (scene / symbol) of every layer, for diagnostic locations. */
+  private owners = new WeakMap<Layer, { owner: string; kind: 'scene' | 'symbol'; layers: Layer[] }>();
+
   constructor(private doc: Doc, private diag: Diagnostics, private opts: ResolverOptions = { skewMode: 'bake' }) {
     this.projectId = uuid5(`project:${doc.sourceHash}`);
+    doc.scenes.forEach((sc, i) => { for (const l of sc.layers) this.owners.set(l, { owner: sc.name || `Scene ${i + 1}`, kind: 'scene', layers: sc.layers }); });
+    for (const s of doc.symbols.values()) for (const l of s.timeline.layers) this.owners.set(l, { owner: s.name, kind: 'symbol', layers: s.timeline.layers });
+  }
+
+  /** Location of a layer (and optionally a frame range / element) in the SOURCE document. Frames are 0-based in, 1-based out. */
+  private loc(layer: Layer, from?: number, to?: number, element?: number, source?: string): DiagLocation {
+    const o = this.owners.get(layer);
+    const l: DiagLocation = { owner: o?.owner, ownerKind: o?.kind, layer: layer.name, layerIndex: layer.index !== undefined ? layer.index + 1 : undefined };
+    if (from !== undefined) l.frames = [from + 1, (to ?? from) + 1];
+    if (element !== undefined) l.element = element + 1;
+    if (source) l.source = source;
+    return l;
+  }
+  private keyLoc(layer: Layer, f: Frame, element?: number, source?: string): DiagLocation { return this.loc(layer, f.index, f.index + f.duration - 1, element, source); }
+  private isGuided(layer: Layer): boolean {
+    const o = this.owners.get(layer);
+    return layer.parentIndex !== undefined && o?.layers[layer.parentIndex]?.kind === 'guide';
   }
 
   run(): TSProject {
@@ -155,7 +175,7 @@ export class Resolver {
     const key = (stat ? `sym:${sym.name}` : `sym:${sym.name}#${this.frameKey(sym, symFrame, h)}`) + (h ? `|h${rnd(h)}` : '');
     const id = uuid5(key, this.projectId);
     if (this.clips.has(id)) return id;
-    if (this.building.has(id)) { this.diag.loss('SYMBOL_CYCLE', `Recursive symbol reference to "${sym.name}" skipped`); return null; }
+    if (this.building.has(id)) { this.diag.loss('SYMBOL_CYCLE', 'Symbol contains itself (recursive reference): the inner copy is skipped', 1, { owner: sym.name, ownerKind: 'symbol' }); return null; }
     this.building.add(id);
     const name = this.cleanName(sym.name);
     this.buildClip(id, name, sym.timeline, [stat ? 0 : symFrame], false, h);
@@ -174,7 +194,7 @@ export class Resolver {
     if (this.isStatic(sym)) return this.clipFor(sym, 0, h);
     const id = uuid5(`full:${sym.name}` + (h ? `|h${rnd(h)}` : ''), this.projectId);
     if (this.clips.has(id)) return id;
-    if (this.building.has(id)) { this.diag.loss('SYMBOL_CYCLE', `Recursive symbol reference to "${sym.name}" skipped`); return null; }
+    if (this.building.has(id)) { this.diag.loss('SYMBOL_CYCLE', 'Symbol contains itself (recursive reference): the inner copy is skipped', 1, { owner: sym.name, ownerKind: 'symbol' }); return null; }
     this.building.add(id);
     const len = this.symLen(sym);
     this.buildClip(id, this.cleanName(sym.name), sym.timeline, Array.from({ length: len }, (_, k) => k), false, h);
@@ -202,10 +222,10 @@ export class Resolver {
     const ordered = [...tl.layers].reverse(); // Animate lists top layer first; ToonSquid lO is bottom-first
     const conv: Layer[] = [];
     for (const layer of ordered) {
-      if (layer.kind === 'folder') { this.diag.info('LAYER_FOLDER', 'Layer folders are flattened (children are converted as ordinary layers)'); continue; }
-      if (layer.kind === 'guide') { this.diag.loss('LAYER_GUIDE', 'Guide layers are not converted'); continue; }
-      if (layer.kind === 'mask') { this.diag.loss('LAYER_MASK', 'Mask layers are not converted; masked layers are rendered without masking'); continue; }
-      if (!layer.visible) { this.diag.loss('LAYER_HIDDEN', 'Hidden layers are not converted'); this.stats.hiddenLayersSkipped++; continue; }
+      if (layer.kind === 'folder') { this.diag.info('LAYER_FOLDER', 'Layer folder is flattened (its layers are converted as ordinary layers)', 1, this.loc(layer)); continue; }
+      if (layer.kind === 'guide') { this.diag.loss('LAYER_GUIDE', 'Guide layer is not converted (Animate does not show it in the output either)', 1, this.loc(layer)); continue; }
+      if (layer.kind === 'mask') { this.diag.loss('LAYER_MASK', 'Mask layer is not converted; the layers it masks are drawn without masking', 1, this.loc(layer)); continue; }
+      if (!layer.visible) { this.diag.loss('LAYER_HIDDEN', 'Hidden layer is not converted (it is left out of the file)', 1, this.loc(layer)); this.stats.hiddenLayersSkipped++; continue; }
       conv.push(layer);
     }
     // Resolve every frame once (bottom-first), so each shape can see what is drawn above it in the same frame.
@@ -220,7 +240,7 @@ export class Resolver {
     };
     conv.forEach((layer, li) => {
       const lid = uuid5(`${id}|L${li}`, this.projectId);
-      const drawings = this.buildLayer(id, li, layer, resolved[li], preH, (k, ci) => above(li, k, ci));
+      const drawings = this.buildLayer(id, li, layer, resolved[li], preH, (k, ci) => above(li, k, ci), srcFrames);
       layers.push({ id: lid, name: layer.name || `Layer ${li + 1}`, drawings });
     });
     const blendsInside = resolved.some((fr) => fr.some((els) => (els ?? []).some((e) => e.inst?.bm !== undefined)));
@@ -272,46 +292,68 @@ export class Resolver {
     const nextKey = layer.frames[idx + 1];
     const offset = j - f.index;
     let tweenEnd: InstanceEl | null = null;
-    if (f.tween && offset > 0) {
-      if (f.tween.kind === 'motion') {
+    if (f.tween && offset > 0 && (f.tween.kind === 'motion' || f.tween.kind === 'shape')) {
+      const tl = this.keyLoc(layer, f);
+      const hasNext = !!nextKey && nextKey.index === f.index + f.duration;
+      // A tween on a layer's LAST keyframe (no end keyframe) is held by Animate as well: not a conversion loss, not reported.
+      if (hasNext && f.tween.kind === 'motion') {
         const starts = f.elements.filter((e) => e.type === 'instance');
-        const ends = nextKey && nextKey.index === f.index + f.duration ? nextKey.elements.filter((e) => e.type === 'instance') : [];
+        const ends = nextKey.elements.filter((e) => e.type === 'instance');
         if (starts.length === 1 && ends.length === 1 && f.elements.length === 1) {
           const s0 = starts[0] as InstanceEl, e1 = ends[0] as InstanceEl;
           // Interpolating between DIFFERENT symbols mixes two unrelated registration points and throws the art off
           // (the frame-2 jump in BF NOTE LEFT/UP/DOWN). Hold the start keyframe instead, like the reference render.
           if (s0.lib === e1.lib) tweenEnd = e1;
-          else this.diag.approx('TWEEN_SYMBOL_SWAP', 'Motion tween between two different symbols: held at the start keyframe (no interpolation)', 1);
+          else this.diag.approx('TWEEN_SYMBOL_SWAP', 'Classic tween between two different symbols: held at the start keyframe (no interpolation)', 1, { ...tl, element: 1, source: `"${s0.lib}" → "${e1.lib}"` });
+        } else {
+          // Animate tweens a single group too; our parser flattens groups, so that case is a real loss.
+          const oneGroup = (els: typeof f.elements) => els.length > 0 && els.every((x) => x.type === 'shape' && x.group !== undefined && x.group === (els[0] as ShapeEl).group);
+          if (oneGroup(f.elements) && oneGroup(nextKey.elements))
+            this.diag.approx('TWEEN_UNPAIRED', 'Classic tween of a group: not interpolated (held at the start keyframe)', 1, { ...tl, source: 'tweened <DOMGroup>' });
+          else
+            this.diag.info('TWEEN_BROKEN_SOURCE', 'Classic tween whose keyframes do not each hold exactly one symbol instance: Animate does not interpolate this either (broken tween); held at the start keyframe', 1, { ...tl, source: `start keyframe: ${f.elements.length} element(s), end keyframe: ${nextKey.elements.length}` });
         }
-        else this.diag.approx('TWEEN_UNPAIRED', 'Motion tween without a single instance at both keyframes: held at the start keyframe', 1);
-      } else if (f.tween.kind === 'shape') {
-        this.diag.loss('TWEEN_SHAPE', 'Shape tweens are not supported (held at the start keyframe)', 1);
+      } else if (hasNext && f.tween.kind === 'shape') {
+        this.diag.loss('TWEEN_SHAPE', 'Shape tween is not supported: held at the start keyframe, then jumps to the end keyframe', 1, tl);
       }
     }
-    for (const e of f.elements) {
-      if (e.type === 'shape') { const sig = `S${this.shapeId(e)}`; out.push({ sig, base: sig, shape: e }); continue; }
+    f.elements.forEach((e, ei) => {
+      if (e.type === 'shape') { const sig = `S${this.shapeId(e)}`; out.push({ sig, base: sig, shape: e }); return; }
+      const el = this.keyLoc(layer, f, ei);
       const sym = this.doc.symbols.get(e.lib);
-      if (!sym) { this.diag.loss('SYMBOL_UNRESOLVED', `Instance of unknown symbol "${e.lib}" skipped`); continue; }
+      if (!sym) { this.diag.loss('SYMBOL_UNRESOLVED', 'Instance of a symbol that is not in the library: skipped', 1, { ...el, source: `libraryItemName="${e.lib}"` }); return; }
       const len = Math.max(1, timelineLength(sym.timeline));
+      if (e.symbolType === 'graphic' && e.lastFrame !== undefined && e.lastFrame < len - 1 && e.loop !== 'single frame')
+        this.diag.approx('GRAPHIC_LAST_FRAME', 'Graphic loop range end (Last frame) is not supported: the symbol plays to its own last frame', 1, { ...el, source: `lastFrame="${e.lastFrame}" (symbol has ${len} frames)` });
+      if (e.symbolType === 'graphic' && e.loop !== 'loop')
+        this.diag.unsupported('TS_LOOP_MODE', 'Loop mode is not written as a ToonSquid loop setting; the correct frames are baked into the drawings instead', 1, { ...el, source: `loop="${e.loopSource ?? e.loop}"` });
       // Movie clips keep playing across consecutive keyframes (same symbol, same layer = the same instance in Animate);
       // restarting them at every keyframe made loops like "retry brain loop movie" jump back and stutter.
       const mcStart = e.symbolType === 'movie clip' ? this.movieClipRunStart(layer, idx, e) : f.index;
-      if (mcStart !== f.index) this.diag.info('MOVIECLIP_CONTINUOUS', 'Movie clips spanning several keyframes keep playing continuously (not restarted at each keyframe)', 1);
+      if (mcStart !== f.index) this.diag.info('MOVIECLIP_CONTINUOUS', 'Movie clip spanning several keyframes keeps playing continuously (not restarted at each keyframe)', 1, el);
       const symFrame = this.symbolFrame(e, j - mcStart, len);
       const Me = eff(e.matrix);
       const dec = decompose(Me);
-      const h = this.shearOf(dec.h);
-      const fxw = this.instanceEffects(e);
+      const h = this.shearOf(dec.h, false, el);
+      const fxw = this.instanceEffects(e, el);
       let st: InstState = {
         lib: e.lib, pv: [e.tp[0], e.tp[1]], p: apply(Me, e.tp), rot: dec.rot, sx: dec.sx, sy: dec.sy, h,
         alpha: e.alpha, symFrame, blend: e.blend, bm: fxw.bm, fx: fxw.fx,
       };
       if (tweenEnd && f.tween) {
         const t = easeT(offset / f.duration, f.tween.ease);
-        if (f.tween.customEase) this.diag.approx('TWEEN_CUSTOM_EASE', 'Custom ease curves are not supported: standard ease used', 1);
+        if (f.tween.customEase) this.diag.approx('TWEEN_CUSTOM_EASE', 'Custom ease curve is not supported: standard ease used', 1, el);
         const Me2 = eff(tweenEnd.matrix);
         const d2 = decompose(Me2);
         const h2 = this.shearOf(d2.h, true);
+        // Reported, not converted yet (Phase B1): tween options and non-alpha colour/filter changes.
+        if (f.tween.scale === false && (Math.abs(d2.sx - dec.sx) > 1e-6 || Math.abs(d2.sy - dec.sy) > 1e-6))
+          this.diag.approx('TWEEN_SCALE_FLAG', 'Tween option "Scale" is off in Animate, but the scale is still interpolated', 1, { ...el, source: 'motionTweenScale="false"' });
+        if (f.tween.orientToPath && !this.isGuided(layer))
+          this.diag.info('TWEEN_ORIENT_NO_GUIDE', 'Tween option "Orient to path" has no effect without a motion guide (same as in Animate)', 1, { ...el, source: 'motionTweenOrientToPath="true"' });
+        const colourKey = (x: InstanceEl) => JSON.stringify({ c: x.colorFx ? { ...x.colorFx, alphaMultiplier: 1 } : null, f: x.filters, b: x.blend });
+        if (colourKey(e) !== colourKey(tweenEnd))
+          this.diag.approx('TWEEN_COLOR_FILTER', 'Colour effect / filter change in a tween is not interpolated: start values are used until the end keyframe (alpha is interpolated)', 1, el);
         // Rotation/scale are interpolated about the START keyframe's transformation point; its end position is where the
         // end matrix puts that same local point, so both keyframes are reproduced exactly.
         const p2 = apply(Me2, e.tp);
@@ -320,30 +362,29 @@ export class Resolver {
         if (mode === 'clockwise') { delta = ((delta % TWO_PI) + TWO_PI) % TWO_PI + TWO_PI * f.tween.rotateTimes; }
         else if (mode === 'counter-clockwise') { delta = -((((-delta) % TWO_PI) + TWO_PI) % TWO_PI) - TWO_PI * f.tween.rotateTimes; }
         else delta = normPi(delta);
-        const lerp = (a: number, b: number) => a + (b - a) * t;
+        const end = tweenEnd;
         const at = (u: number): InstState => ({
           ...st, p: [st.p[0] + (p2[0] - st.p[0]) * u, st.p[1] + (p2[1] - st.p[1]) * u], rot: dec.rot + delta * u,
-          sx: dec.sx + (d2.sx - dec.sx) * u, sy: dec.sy + (d2.sy - dec.sy) * u, h: h + (h2 - h) * u, alpha: e.alpha + (tweenEnd.alpha - e.alpha) * u,
+          sx: dec.sx + (d2.sx - dec.sx) * u, sy: dec.sy + (d2.sy - dec.sy) * u, h: h + (h2 - h) * u, alpha: e.alpha + (end.alpha - e.alpha) * u,
         });
         // Guard: the interpolation must land exactly on both keyframes. If it does not (a matrix the model cannot
         // represent), hold the start keyframe and say so, instead of producing a jumping in-between.
         const err = Math.max(stateError(at(0), Me, dec.h), stateError(at(1), Me2, d2.h));
         if (err > 0.05) {
-          this.diag.warn('TWEEN_GUARD', `Motion tween in "${e.lib}" could not be interpolated exactly (keyframe mismatch ${rnd(err)}px): held at the start keyframe`, 1);
+          this.diag.warn('TWEEN_GUARD', 'Classic tween could not be interpolated exactly: held at the start keyframe', 1, { ...el, source: `"${e.lib}", keyframe mismatch ${rnd(err)} px` });
         } else {
           st = at(t);
-          void lerp;
-          this.diag.approx('TWEEN_BAKED', 'Motion tweens are baked per frame; easing model p=t+e·t(1−t) is unverified against Animate output', 1);
+          this.diag.approx('TWEEN_BAKED', 'Classic tween baked frame by frame; the easing model p=t+e·t(1−t) is not yet compared with Animate', 1, el);
           this.stats.tweenFramesBaked++;
         }
       }
       const base = `I${e.lib}|${rnd(st.pv[0])},${rnd(st.pv[1])}|${rnd(st.p[0])},${rnd(st.p[1])}|${rnd(st.rot)}|${rnd(st.sx)},${rnd(st.sy)}|h${rnd(st.h)}|${rnd(st.alpha)}|b${st.bm ?? ''}|${JSON.stringify(st.fx)}`;
       out.push({ sig: `${base}|${this.frameKey(sym, st.symFrame, st.h)}`, base, inst: st });
-    }
+    });
     return out;
   }
 
-  private buildLayer(clipId: string, li: number, layer: Layer, frames: (ResolvedEl[] | null)[], preH: number, above: (k: number, ci: number) => ShapeEl[]): TSDrawing[] {
+  private buildLayer(clipId: string, li: number, layer: Layer, frames: (ResolvedEl[] | null)[], preH: number, above: (k: number, ci: number) => ShapeEl[], srcFrames: number[]): TSDrawing[] {
     const drawings: TSDrawing[] = [];
     let runStart = -1;
     let runSig = ""; void runSig;
@@ -355,6 +396,7 @@ export class Resolver {
       const did = uuid5(`${clipId}|L${li}|D${s}`, this.projectId);
       const content: TSDrawing['content'] = [];
       runEls.forEach((el, ci) => {
+        const dl = this.loc(layer, srcFrames[runStart], srcFrames[endK], ci);
         const cid = uuid5(`${clipId}|L${li}|D${s}|C${ci}`, this.projectId);
         if (el.shape) {
           // Distinct sets of shapes drawn above this one during the run; a bleed must be hidden in ALL of them.
@@ -363,7 +405,7 @@ export class Resolver {
             const up = above(k, ci);
             sets.set(up.map((x) => this.shapeId(x)).join(','), up);
           }
-          const c = this.vectorContent(el.shape, layer.name, preH, [...sets.entries()].sort((x, y) => (x[0] < y[0] ? -1 : x[0] > y[0] ? 1 : 0)));
+          const c = this.vectorContent(el.shape, layer.name, preH, dl, [...sets.entries()].sort((x, y) => (x[0] < y[0] ? -1 : x[0] > y[0] ? 1 : 0)));
           if (c) { content.push({ id: cid, c }); this.stats.vectorLayers++; }
         } else if (el.inst) {
           const sym = this.doc.symbols.get(el.inst.lib)!;
@@ -375,13 +417,13 @@ export class Resolver {
           const useFull = this.opts.symbolPlayback !== 'snapshot' && animated && (runModes[ci] === 'play' || (oneFrame && el.inst.h === 0));
           const target = useFull ? this.fullClipFor(sym, el.inst.h) : this.clipFor(sym, el.inst.symFrame, el.inst.h);
           const time = useFull ? el.inst.symFrame + 1 : undefined;
-          if (useFull && runModes[ci] === 'play') this.diag.info('SYMBOL_NATIVE', 'Animated symbols are written as clips with all their frames and play inside symbol layers (start frame set with Time)', 1);
+          if (useFull && runModes[ci] === 'play') this.diag.info('SYMBOL_NATIVE', 'Animated symbol written as a clip with all its frames, playing inside a symbol layer (start frame set with Time)', 1, dl);
           if (target) {
             // Blend isolation: a symbol whose own content uses blend modes is shown as an isolated group (ToonSquid Normal,
             // bM 0) instead of the default Pass Through. Otherwise its blended layers mix with whatever lies outside it
             // (the white Background), e.g. BF's miss poses turning washed-out lavender. Its own blend mode wins if set.
             const isolate = el.inst.bm === undefined && this.clips.get(target)?.blendsInside === true;
-            if (isolate) this.diag.info('BLEND_ISOLATED', 'Symbols that contain blend modes are written as isolated groups (Normal instead of Pass Through) so their blends stay inside the symbol', 1);
+            if (isolate) this.diag.info('BLEND_ISOLATED', 'Symbol that contains blend modes written as an isolated group (Normal instead of Pass Through) so its blends stay inside it', 1, dl);
             content.push({ id: cid, c: { kind: 'clip', ref: { clipId: target, pv: [el.inst.pv[0] + el.inst.h * el.inst.pv[1], el.inst.pv[1]], p: el.inst.p, rot: el.inst.rot, sx: el.inst.sx, sy: el.inst.sy, alpha: el.inst.alpha, name: el.inst.lib, blend: isolate ? 0 : el.inst.bm, effects: el.inst.fx.length ? el.inst.fx : undefined, time } } });
             this.stats.clipLayers++;
           }
@@ -423,34 +465,34 @@ export class Resolver {
    * Filters, colour effects and blend mode of an instance (see effects/plan.ts), turned into the effect rows and bM value
    * ToonSquid stores (decoded from an app-made file). Anything without an equivalent is reported, never dropped silently.
    */
-  private instanceEffects(e: InstanceEl): { fx: TSEffect[]; bm?: number } {
+  private instanceEffects(e: InstanceEl, loc?: DiagLocation): { fx: TSEffect[]; bm?: number } {
     const planned: PlannedEffect[] = [];
     for (const plan of [planFilters(e.filters), planColor(e.colorFx)]) {
       planned.push(...plan.effects);
-      for (const l of plan.losses) this.diag.loss('FX_NO_EQUIVALENT', l, 1);
-      for (const a of plan.approx) this.diag.approx('FX_APPROX', a, 1);
+      for (const l of plan.losses) this.diag.loss('FX_NO_EQUIVALENT', l, 1, loc);
+      for (const a of plan.approx) this.diag.approx('FX_APPROX', a, 1, loc);
     }
     const fx = toTSEffects(planned);
-    if (fx.length) this.diag.info('FX_WRITTEN', `Animate filters written as ToonSquid effects on the symbol layer (${[...new Set(planned.map((p) => p.kind))].join(', ')}). Effect on symbol layers is inferred from effects on shape layers`, 1);
+    if (fx.length) this.diag.info('FX_WRITTEN', `Animate filters written as ToonSquid effects on the symbol layer (${[...new Set(planned.map((p) => p.kind))].join(', ')}). Effect on symbol layers is inferred from effects on shape layers`, 1, loc);
     let bm: number | undefined;
     if (e.blend !== 'normal') {
       const code = blendCode(e.blend);
-      if (code === null) this.diag.loss('BLEND_NO_EQUIVALENT', `Blend mode "${e.blend}" has no ToonSquid equivalent`, 1);
-      else if (code === undefined) this.diag.approx('BLEND_LAYER', `Blend mode "${e.blend}" -> ToonSquid Normal`, 1);
-      else { bm = code; this.diag.info('BLEND_WRITTEN', `Blend mode "${e.blend}" written as ToonSquid "${TS_BLEND_MODES[code]}" (bM ${code})`, 1); }
+      if (code === null) this.diag.loss('BLEND_NO_EQUIVALENT', `Blend mode "${e.blend}" has no ToonSquid equivalent`, 1, loc);
+      else if (code === undefined) this.diag.approx('BLEND_LAYER', `Blend mode "${e.blend}" -> ToonSquid Normal`, 1, loc);
+      else { bm = code; this.diag.info('BLEND_WRITTEN', `Blend mode "${e.blend}" written as ToonSquid "${TS_BLEND_MODES[code]}" (bM ${code})`, 1, loc); }
     }
     return { fx, bm };
   }
 
   /** Applies the skew policy to a raw shear factor; returns the shear that will be written (0 = none). */
-  private shearOf(h: number, quiet = false): number {
+  private shearOf(h: number, quiet = false, loc?: DiagLocation): number {
     if (!(Math.abs(h) > 0)) return 0;
-    if (Math.abs(h) < SHEAR_EPS) { if (!quiet) this.diag.info('SKEW_NEGLIGIBLE', 'Shear below 0.1° ignored', 1); return 0; }
-    if (this.opts.skewMode === 'off') { if (!quiet) this.diag.loss('TRANSFORM_SKEW', 'Skew/shear in instance transforms dropped (skew handling disabled)', 1); return 0; }
+    if (Math.abs(h) < SHEAR_EPS) { if (!quiet) this.diag.info('SKEW_NEGLIGIBLE', 'Shear below 0.1° ignored', 1, loc); return 0; }
+    if (this.opts.skewMode === 'off') { if (!quiet) this.diag.loss('TRANSFORM_SKEW', 'Skew/shear in instance transforms dropped (skew handling disabled)', 1, loc); return 0; }
     if (!quiet) {
       this.stats.skewedInstances++;
-      if (this.opts.skewMode === 'perspective') this.diag.approx('SKEW_PERSPECTIVE', 'Skew converted to a ToonSquid Perspective effect (corner offsets). Effect layout is read from an app-made sample; space/normalisation of the corners is unverified', 1);
-      else this.diag.approx('SKEW_BAKED', 'Skew baked into vector geometry of per-skew clip copies (exact, no effect used)', 1);
+      if (this.opts.skewMode === 'perspective') this.diag.approx('SKEW_PERSPECTIVE', 'Skew converted to a ToonSquid Perspective effect (corner offsets). Effect layout is read from an app-made sample; space/normalisation of the corners is unverified', 1, loc);
+      else this.diag.approx('SKEW_BAKED', 'Skew baked into vector geometry of per-skew clip copies (exact, no effect used)', 1, loc);
     }
     return Math.round(h * 10000) / 10000;
   }
@@ -479,7 +521,7 @@ export class Resolver {
     return preH !== 0 && this.opts.skewMode === 'bake' ? compose(shearMatrix(preH), shape.matrix ?? { a: 1, b: 0, c: 0, d: 1, tx: 0, ty: 0 }) : shape.matrix;
   }
 
-  private vectorContent(shape: ShapeEl, layerName: string, preH: number, uppers: [string, ShapeEl[]][] = []): Content | null {
+  private vectorContent(shape: ShapeEl, layerName: string, preH: number, loc: DiagLocation, uppers: [string, ShapeEl[]][] = []): Content | null {
     let perH = this.shapeCache.get(shape);
     if (!perH) { perH = new Map(); this.shapeCache.set(shape, perH); }
     const cacheKey = `${preH}|${uppers.map((u) => u[0]).join('/')}`;
@@ -496,9 +538,9 @@ export class Resolver {
     const fills: { fid: number; color: RGBA; contours: Contour[] }[] = [];
     for (const fid of usedFillIds(shape.edges)) {
       const paint = shape.fills.get(fid);
-      if (!paint) { this.diag.loss('FILL_MISSING', `Fill style ${fid} referenced by edges is not defined`); continue; }
+      if (!paint) { this.diag.loss('FILL_MISSING', 'Fill style referenced by edges is not defined: that area is missing', 1, { ...loc, source: `fillStyle ${fid}` }); continue; }
       const color = paint.kind === 'solid' ? paint.color : paint.fallback;
-      if (!color) { this.diag.loss('FILL_UNSUPPORTED', `Fill type ${paint.kind === 'unsupported' ? paint.what : ''} not converted`, 1); continue; }
+      if (!color) continue;   // already reported by the parser (XFL_BITMAP_FILL / XFL_FILL_UNKNOWN) at this element
       const contours = fillContours(shape.edges, fid, m, this.diag);
       if (contours.length) fills.push({ fid, color, contours });
     }
@@ -519,7 +561,7 @@ export class Resolver {
           items.items.push({ kind: 'stroke', color: f.color, width: SEAM_WIDTH, contours });
           this.stats.seamUnderlays++; bled++;
         }
-        if (bled) this.diag.info('SEAM_BLEED', `Fill edges hidden under layers above get a ${SEAM_WIDTH / 2}px bleed, to hide anti-aliasing seams (visible edges unchanged)`, 1);
+        if (bled) this.diag.info('SEAM_BLEED', `Fill edges hidden under layers above get a ${SEAM_WIDTH / 2}px bleed, to hide anti-aliasing seams (visible edges unchanged)`, 1, loc);
       }
       {
         const lum = (c: RGBA) => 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b;
@@ -535,7 +577,7 @@ export class Resolver {
           items.items.push({ kind: 'stroke', color: solidOf(fid)!, width: SEAM_WIDTH, contours });
           this.stats.seamUnderlays++;
         }
-        if (seams.size) this.diag.info('SEAM_UNDERLAY', `Thin ${SEAM_WIDTH}px underlay strokes added beneath edges shared by two fills, to hide anti-aliasing seams`, 1);
+        if (seams.size) this.diag.info('SEAM_UNDERLAY', `Thin ${SEAM_WIDTH}px underlay strokes added beneath edges shared by two fills, to hide anti-aliasing seams`, 1, loc);
       }
     }
     for (const f of fills) {
@@ -545,9 +587,9 @@ export class Resolver {
     }
     for (const sid of usedStrokeIds(shape.edges)) {
       const st = shape.strokes.get(sid);
-      if (!st) { this.diag.loss('STROKE_MISSING', `Stroke style ${sid} referenced by edges is not defined`); continue; }
+      if (!st) { this.diag.loss('STROKE_MISSING', 'Stroke style referenced by edges is not defined: that stroke is missing', 1, { ...loc, source: `strokeStyle ${sid}` }); continue; }
       const color = st.paint.kind === 'solid' ? st.paint.color : st.paint.fallback;
-      if (!color) { this.diag.loss('STROKE_UNSUPPORTED', 'Non-solid stroke paint not converted', 1); continue; }
+      if (!color) continue;   // already reported by the parser at this element
       const contours = strokeContours(shape.edges, sid, m);
       if (!contours.length) continue;
       items.items.push({ kind: 'stroke', color, width: st.weight, contours });
@@ -558,7 +600,7 @@ export class Resolver {
       const b = contoursBounds(items.items.flatMap((i) => i.contours));
       const eff = b ? shearEffect(b, preH) : null;
       if (eff) { items.effect = eff; this.stats.perspectiveEffects++; }
-      else this.diag.loss('SKEW_NO_BOUNDS', 'Shape with zero-width/height bounds could not receive a Perspective effect', 1);
+      else this.diag.loss('SKEW_NO_BOUNDS', 'Shape with zero-width/height bounds could not receive a Perspective effect', 1, loc);
     }
     if (bake && items.items.length) this.stats.bakedSkewShapes++;
     const res = items.items.length ? items : null;

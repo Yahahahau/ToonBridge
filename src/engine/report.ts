@@ -1,4 +1,4 @@
-import type { DiagItem } from './diagnostics';
+import { formatLocation, type DiagItem, type Severity } from './diagnostics';
 import type { ProjectInfo } from './info';
 import type { ValidationResult } from './tsproj/validator';
 
@@ -47,9 +47,23 @@ export function reportToText(r: Report): string {
   L.push(`Validation: ${r.validation.ok ? 'PASS' : 'FAIL'}`);
   for (const c of r.validation.checks) L.push(`  [${c.ok ? 'ok' : 'FAIL'}] ${c.category}${c.details.length ? ' — ' + c.details.slice(0, 5).join('; ') : ''}`);
   L.push('Stats: ' + Object.entries(r.stats).map(([k, v]) => `${k}=${v}`).join(', '));
-  L.push('Diagnostics:');
-  for (const d of r.diagnostics) L.push(`  [${d.severity}] ${d.code} ×${d.count}: ${d.message}`);
+  const s = diagSummary(r.diagnostics);
+  L.push(`Diagnostics: ${s.loss.items} lost (${s.loss.affected} places), ${s.unsupported.items} unsupported (${s.unsupported.affected}), ${s.approx.items} approximated (${s.approx.affected}), ${s.warn.items} warnings (${s.warn.affected}), ${s.info.items} info`);
+  for (const d of r.diagnostics) {
+    L.push(`  [${d.severity}] ${d.code} ×${d.count}: ${d.message}`);
+    if (d.severity === 'info') continue;   // info lines say how something was converted; locations would only add noise
+    for (const l of d.locations) L.push(`      at ${formatLocation(l)}`);
+    if (d.hiddenLocations) L.push(`      … and ${d.hiddenLocations} more location(s) not listed`);
+  }
   L.push('Features:');
   for (const f of r.features) L.push(`  [${f.level}] ${f.feature} — ${f.note}`);
   return L.join('\n');
+}
+
+export interface DiagTotals { items: number; affected: number; }
+/** Per severity: number of distinct diagnostics and total affected items. */
+export function diagSummary(diags: DiagItem[]): Record<Severity, DiagTotals> {
+  const out: Record<Severity, DiagTotals> = { loss: { items: 0, affected: 0 }, unsupported: { items: 0, affected: 0 }, approx: { items: 0, affected: 0 }, warn: { items: 0, affected: 0 }, info: { items: 0, affected: 0 } };
+  for (const d of diags) { out[d.severity].items++; out[d.severity].affected += d.count; }
+  return out;
 }

@@ -48,6 +48,7 @@ function* convertSteps(a: Analysis, SQL: SqlJsStatic, options: ConvertOptions): 
   const project = new Resolver(a.doc, a.diag, { skewMode: options.skewMode ?? 'bake', seamUnderlay: options.seamUnderlay ?? true, symbolPlayback: options.symbolPlayback ?? 'native' }).run();
   yield 'write';
   const bytes = writeTsproj(SQL, project);
+  a.diag.info('OUTPUT_NO_THUMBNAILS', 'Library thumbnails are not written (app-made files contain them; ToonSquid may show empty previews until it redraws them)', 1, { ownerKind: 'document', owner: 'output .tsproj', source: 'Thumbnails/*.png' });
   yield 'validate';
   const validation = validateTsproj(SQL, bytes);
   const report: Report = {
