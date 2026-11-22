@@ -58,7 +58,7 @@ Full detail is in the Loss Catalog, section C.
 | Audio | Structure fully observed (asset, sidecar, layer, timeline flag) | Yes (audio layer) | n/a |
 | Video | Tables exist; no sample | — | — |
 | JPEXS zero-length frames | All are empty first frames; dropping them restores the cross-layer lengths exactly | n/a (timing) | No |
-| JPEXS unlinked pages | 5 empty, 1 with 13 instances (deleted symbol). Unreachable from the document | Optional "Recovered" clip | No |
+| JPEXS unlinked pages | All 6 hold art (corrected in Phase B2: 5 were wrongly called empty), 1 with 13 instances (deleted symbol). Unreachable from the document | Optional "Recovered" clip | No |
 
 ## 4. Conversion modes
 

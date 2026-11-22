@@ -1,0 +1,130 @@
+diff --git a/src/com/jpexs/flash/fla/exporter/BinaryFlaToXflExporter.java b/src/com/jpexs/flash/fla/exporter/BinaryFlaToXflExporter.java
+index d972fad..75528d2 100644
+--- a/src/com/jpexs/flash/fla/exporter/BinaryFlaToXflExporter.java
++++ b/src/com/jpexs/flash/fla/exporter/BinaryFlaToXflExporter.java
+@@ -15,6 +15,11 @@
+  * License along with this library; if not, write to the Free Software
+  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston,
+  * MA 02110-1301  USA
++ *
++ * Modified 2026-11-22 for ToonBridge (https://github.com/Yahahahau/ToonBridge):
++ * zero-length frames no longer shift the following keyframes of their layer
++ * (see layer()); FRAME_DURATION and UNLINKED_PAGE issues name their timeline,
++ * layer, frame and outcome. Upstream: jindrapetrik/jpexs-fla-convert @ 6d4a715.
+  */
+ package com.jpexs.flash.fla.exporter;
+ 
+@@ -81,6 +86,8 @@ public final class BinaryFlaToXflExporter {
+         final Set<String> itemIds = new HashSet<>();
+         final Set<FlaRecord> active = Collections.newSetFromMap(new IdentityHashMap<FlaRecord, Boolean>());
+         String stream = "Contents";
++        /** Name of the timeline being exported, for issue messages (ToonBridge patch). */
++        String timelineName = "";
+         Element mediaElement;
+         int bitmapOrdinal;
+ 
+@@ -199,7 +206,7 @@ public final class BinaryFlaToXflExporter {
+                     sceneIndex++;
+                 } else if (page.getRole() == BinaryFlaDocument.Page.Role.UNLINKED) {
+                     stream = page.getStream().getPath();
+-                    issue("UNLINKED_PAGE", page.getRoot(), "Page has no scene/library descriptor and is not emitted.");
++                    issue("UNLINKED_PAGE", page.getRoot(), "Page has no scene/library descriptor and is not emitted. outcome=skipped; " + pageSummary(page.getRoot()));
+                 }
+             }
+             stream = "Contents";
+@@ -490,6 +497,7 @@ public final class BinaryFlaToXflExporter {
+ 
+         private void timeline(Element parent, BinaryFlaDocument.Page page) {
+             stream = page.getStream() == null ? "Contents" : page.getStream().getPath();
++            timelineName = page.getName() == null ? "Scene" : page.getName();
+             Element timeline = child(parent, "DOMTimeline");
+             attribute(timeline, "name", page.getName() == null ? "Scene" : page.getName(), page.getDescriptor());
+             if (page.getRole() == BinaryFlaDocument.Page.Role.SCENE) {
+@@ -619,14 +627,31 @@ public final class BinaryFlaToXflExporter {
+             }
+             Element frames = child(e, "frames");
+             long start = 0;
++            List<FlaRecord> frameRecords = new ArrayList<>();
+             for (FlaRecord frame : r.getChildren()) {
+                 if (!"CPicFrame".equals(frame.getClassName())) {
+                     issue("LAYER_CHILD", frame, "Unsupported layer child " + frame.getClassName());
+                     continue;
+                 }
++                frameRecords.add(frame);
++            }
++            String layerName = s(r, "name", "Layer");
++            boolean plainLayer = n(r, "animationType", 0) == 0 && type != 6;
++            for (int i = 0; i < frameRecords.size(); i++) {
++                FlaRecord frame = frameRecords.get(i);
+                 long duration = n(frame, "duration", 1);
+                 if (duration <= 0) {
+-                    issue("FRAME_DURATION", frame, "Zero duration replaced with one frame.");
++                    // ToonBridge patch: a zero-length frame occupies no time on the timeline. The frames after it keep
++                    // their start (start is the sum of the earlier durations), so an EMPTY zero-length frame is
++                    // omitted instead of being widened to one frame, which used to shift every later keyframe.
++                    // Frames that carry anything (art, script, label, sound, tween) keep the old behaviour so that
++                    // no content is lost; their timing change is reported.
++                    String where = "timeline=\"" + timelineName + "\"; layer=\"" + layerName + "\"; frame=" + (start + 1) + "; duration=" + duration;
++                    if (plainLayer && isEmptyFrame(frame) && hasOtherTimedFrame(frameRecords, i)) {
++                        issue("FRAME_DURATION", frame, "Empty zero-length keyframe omitted; later keyframes keep their original start. outcome=skipped; " + where);
++                        continue;
++                    }
++                    issue("FRAME_DURATION", frame, "Zero-length keyframe with content kept as one frame; later keyframes on this layer start one frame later. outcome=modified; " + where);
+                     duration = 1;
+                 }
+                 frame(frames, frame, start, duration);
+@@ -665,6 +690,54 @@ public final class BinaryFlaToXflExporter {
+             }
+         }
+ 
++        /** ToonBridge patch: true when the frame would export nothing (no art, script, label, sound, tween or morph). */
++        static boolean isEmptyFrame(FlaRecord f) {
++            if (!f.getChildren().isEmpty()) {
++                return false;
++            }
++            if (!records(record(f, "shapeData"), "edges").isEmpty()) {
++                return false;
++            }
++            FlaRecord actions = record(f, "actions");
++            if (actions != null && (!s(actions, "source", "").isEmpty() || !records(actions, "commands").isEmpty() || record(actions, "compiledCommands") != null)) {
++                return false;
++            }
++            return n(f, "soundMediaId", 0) == 0 && s(f, "name", "").isEmpty() && n(f, "bookmark", 0) == 0
++                    && record(f, "morphShape") == null && (n(f, "keyMode", 0) & 255) == 0;
++        }
++
++        /** ToonBridge patch: the layer has another frame that takes time, so omitting this one cannot empty the layer. */
++        static boolean hasOtherTimedFrame(List<FlaRecord> frames, int skip) {
++            for (int i = 0; i < frames.size(); i++) {
++                if (i != skip && n(frames.get(i), "duration", 1) > 0) {
++                    return true;
++                }
++            }
++            return false;
++        }
++
++        /** ToonBridge patch: short description of an unlinked page for UNLINKED_PAGE. */
++        static String pageSummary(FlaRecord root) {
++            int layers = 0, frames = 0, objects = 0;
++            long length = 0;
++            for (FlaRecord layer : root.getChildren()) {
++                if (!"CPicLayer".equals(layer.getClassName())) {
++                    continue;
++                }
++                layers++;
++                long sum = 0;
++                for (FlaRecord f : layer.getChildren()) {
++                    if ("CPicFrame".equals(f.getClassName())) {
++                        frames++;
++                        objects += f.getChildren().size() + (records(record(f, "shapeData"), "edges").isEmpty() ? 0 : 1);
++                        sum += Math.max(0, n(f, "duration", 1));
++                    }
++                }
++                length = Math.max(length, sum);
++            }
++            return "layers=" + layers + "; keyframes=" + frames + "; frames=" + length + "; objects=" + objects;
++        }
++
+         private void frame(Element frames, FlaRecord r, long start, long duration) {
+             Element e = child(frames, "DOMFrame");
+             e.setAttribute("index", Long.toString(start));

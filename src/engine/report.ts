@@ -24,7 +24,7 @@ export const FEATURES: FeatureStatus[] = [
   { feature: 'Opening the file inside ToonSquid', level: 'experimental', note: 'No generated file has been opened in the app yet. Please test it on your device.' },
   { feature: 'Filters and blend modes', level: 'experimental', note: 'Blur -> Gaussian Blur, Adjust Color -> Adjustments, Drop Shadow/Glow -> Drop Shadow, blend modes by name; row layouts and bM numbers decoded from an app-made file. Placing them on symbol layers is inferred; blur radius scale not calibrated. Inner shadows/glows, bevels, tint and Invert/Alpha/Erase are reported as lost.' },
   { feature: 'Masks, gradient/bitmap fills, text, sound, shape tweens', level: 'not-supported', note: 'Not converted in V1. See the list of losses in this report.' },
-  { feature: 'Legacy binary FLA (Flash 5 – CS4, OLE2)', level: 'not-supported', note: 'Detected (version, stream counts) and safely rejected with instructions: convert to XFL with Animate or JPEXS FLA Convert first. Tested only on CS4 files; no in-browser reader yet.' },
+  { feature: 'Legacy binary FLA (Flash 5 – CS4, OLE2)', level: 'not-supported', note: 'Detected (version, stream counts) and safely rejected with instructions: convert to XFL with Animate or JPEXS FLA Convert (ToonBridge patch keeps zero-length-frame timing) first; its conversion-report.txt is imported into this report. Tested only on CS4 files; no in-browser reader yet.' },
 ];
 
 export interface Report {
@@ -50,8 +50,8 @@ export function reportToText(r: Report): string {
   const s = diagSummary(r.diagnostics);
   L.push(`Diagnostics: ${s.loss.items} lost (${s.loss.affected} places), ${s.unsupported.items} unsupported (${s.unsupported.affected}), ${s.approx.items} approximated (${s.approx.affected}), ${s.warn.items} warnings (${s.warn.affected}), ${s.info.items} info`);
   for (const d of r.diagnostics) {
-    L.push(`  [${d.severity}] ${d.code} ×${d.count}: ${d.message}`);
-    if (d.severity === 'info') continue;   // info lines say how something was converted; locations would only add noise
+    L.push(`  [${d.origin === 'jpexs' ? 'jpexs ' : ''}${d.severity}] ${d.code} ×${d.count}: ${d.message}`);
+    if (d.severity === 'info' && d.origin === 'toonbridge') continue;   // ToonBridge info lines say how something was converted
     for (const l of d.locations) L.push(`      at ${formatLocation(l)}`);
     if (d.hiddenLocations) L.push(`      … and ${d.hiddenLocations} more location(s) not listed`);
   }

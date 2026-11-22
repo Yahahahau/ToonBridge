@@ -46,6 +46,8 @@ These are measured, not theoretical.
 - **Stage:** JPEXS (`UNLINKED_PAGE`: page has no scene or library descriptor).
 - **Evidence:** the inspector listed each page:
 
+> **Correction (Phase B2, 2026-11-22):** the "Empty" rows below are wrong. The Phase A inspector only counted child objects, but these pages store their art as frame-level shapes. The patched JPEXS summary shows every page holds art: S 70 5 objects, S 73 5, S 69 3, S 62 1, S 66 1, S 75 13. All six are still unreachable from the document. See `PHASE_B2_JPEXS_TIMING_REPORT.md`.
+
 | Stream | Layers | Frames | Content | Assessment |
 |---|---|---|---|---|
 | `S 75 1603754658` | 4 (Layer 1–4) | 15 | **13 symbol instances** (`CPicSprite`) | Real artwork. Not in the library and referenced by nothing: most likely a deleted symbol whose stream was never purged |

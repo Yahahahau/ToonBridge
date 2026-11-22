@@ -1,6 +1,7 @@
 // Public pipeline: Reader -> IR -> Resolver -> Writer -> Validator.
 import type { SqlJsStatic } from 'sql.js';
 import { Diagnostics } from './diagnostics';
+import { importJpexsReport } from './legacy/jpexsReport';
 import type { Doc } from './ir';
 import { describeDoc, type ProjectInfo } from './info';
 import { FEATURES, type Report } from './report';
@@ -37,6 +38,7 @@ export function analyzeInput(bytes: Uint8Array, fileName: string): Analysis {
   const diag = new Diagnostics();
   for (const w of zip.warnings) diag.warn('ZIP', w);
   const doc = parseXfl({ files: zip.entries }, diag);
+  importJpexsReport(zip.entries, diag, (n) => doc.scenes.some((s) => s.name === n));
   return { fileName, doc, diag, info: describeDoc(doc), zipMode: zip.mode, zipWarnings: zip.warnings };
 }
 

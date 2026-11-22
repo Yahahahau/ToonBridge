@@ -71,9 +71,9 @@ Visible edges stay where Animate put them: against an 8× supersampled Animate r
 
 **Legacy binary FLA (Flash 5, MX, MX 2004, 8, CS3, CS4).** These are OLE2 compound files, not ZIP. ToonBridge reads the container safely (size, chain-loop and range limits), reports the Flash version and stream counts, and stops with instructions instead of guessing. To convert one today:
 1. Open it in Animate and *Save As* `.fla` (CS5+) or `.xfl`, **or**
-2. Use [JPEXS FLA Convert](https://github.com/jindrapetrik/jpexs-fla-convert) (LGPL-2.1, Java): `convert --format CS6 --container xfl old.fla outdir`, then zip the folder and drop it in.
+2. Use [JPEXS FLA Convert](https://github.com/jindrapetrik/jpexs-fla-convert) (LGPL-2.1, Java) **with the ToonBridge patch** in [`third_party/jpexs-fla-convert`](third_party/jpexs-fla-convert) (`build.sh` builds it from upstream source): `convert --format CS6 --container xfl old.fla outdir`, then zip the folder **with its `conversion-report.txt`** and drop it in.
 
-Route 2 was tested on two CS4 files: both convert, keep names and keyframe animation, and frame 1 matches the XFL reference. JPEXS reports two losses: zero-length frames become 1 frame, and pages not linked to the library are skipped. Other Flash versions are untested (no sample files yet).
+Why the patch: upstream JPEXS widens zero-length frames to one frame, which made layers start one frame late (37 layers in the two test files; e.g. parts of GF missing on frame 1). The patch omits *empty* zero-length frames so every keyframe keeps its source start; on both CS4 test files all keyframes now match the binary records. JPEXS's own report (zero-length frames, skipped unlinked pages, …) is shown in the ToonBridge report under "From the legacy FLA converter (JPEXS)". Other Flash versions are untested (no sample files yet).
 
 Other limits: conversion runs on the main thread (big projects freeze the page briefly).
 

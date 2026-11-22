@@ -7,7 +7,7 @@ const SEV: Record<string, { label: string; tone: Tone }> = { loss: { label: 'Los
 const ORDER = ['loss', 'unsupported', 'approx', 'warn', 'info'];
 
 function where(l: DiagLocation): string {
-  const owner = l.owner ? `${l.ownerKind === 'symbol' ? 'Symbol' : l.ownerKind === 'scene' ? 'Scene' : 'Document'} “${l.owner}”` : '';
+  const owner = l.owner ? `${l.ownerKind === 'symbol' ? 'Symbol' : l.ownerKind === 'scene' ? 'Scene' : l.ownerKind === 'page' ? 'FLA page' : 'Document'} “${l.owner}”` : '';
   const layer = l.layer !== undefined ? `Layer “${l.layer}”${l.layerIndex ? ` (#${l.layerIndex})` : ''}` : '';
   return [owner, layer].filter(Boolean).join(' › ');
 }
@@ -48,8 +48,10 @@ export function ReportView({ report }: { report: Report }) {
   const [copied, setCopied] = useState(false);
   const copy = async () => { try { await navigator.clipboard.writeText(reportToText(report)); setCopied(true); setTimeout(() => setCopied(false), 1500); } catch { /* clipboard unavailable */ } };
   const diags = [...report.diagnostics].sort((a, b) => ORDER.indexOf(a.severity) - ORDER.indexOf(b.severity));
-  const attention = diags.filter((d) => d.severity !== 'info');
-  const infos = diags.filter((d) => d.severity === 'info');
+  const own = diags.filter((d) => d.origin !== 'jpexs');
+  const attention = own.filter((d) => d.severity !== 'info');
+  const infos = own.filter((d) => d.severity === 'info');
+  const legacy = diags.filter((d) => d.origin === 'jpexs');
   const s = diagSummary(report.diagnostics);
   const tile = (label: string, k: keyof typeof s) => <div><dt>{label}</dt><dd>{s[k].items}{s[k].affected > s[k].items && <span className="muted small"> · {s[k].affected} places</span>}</dd></div>;
   return (
@@ -68,6 +70,13 @@ export function ReportView({ report }: { report: Report }) {
           <ul className="rows">{attention.map((d, i) => <DiagRow key={i} d={d} />)}</ul>
         )}
       </Box>
+
+      {legacy.length > 0 && (
+        <Box flush title="From the legacy FLA converter (JPEXS)">
+          <p className="box-pad muted small">This project was exported from a binary FLA by JPEXS FLA Convert. These items come from its own report (conversion-report.txt), not from ToonBridge.</p>
+          <ul className="rows">{legacy.map((d, i) => <DiagRow key={i} d={d} />)}</ul>
+        </Box>
+      )}
 
       {infos.length > 0 && (
         <Box flush title="How things were converted">

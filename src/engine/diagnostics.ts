@@ -20,7 +20,7 @@ export const LEVEL: Record<Severity, Level> = { loss: 'error', unsupported: 'war
 export interface DiagLocation {
   /** Scene or library symbol name. */
   owner?: string;
-  ownerKind?: 'scene' | 'symbol' | 'document';
+  ownerKind?: 'scene' | 'symbol' | 'document' | 'page';   // page = a binary FLA stream (e.g. "S 75 1603754658")
   /** Layer name and its position in Animate's layer list (1 = top). */
   layer?: string;
   layerIndex?: number;
@@ -31,7 +31,11 @@ export interface DiagLocation {
   source?: string;
 }
 
+/** Who raised it: ToonBridge itself, or an external converter whose report was imported (kept apart in reports). */
+export type DiagOrigin = 'toonbridge' | 'jpexs';
+
 export interface DiagItem {
+  origin: DiagOrigin;
   severity: Severity;
   level: Level;
   code: string;
@@ -47,12 +51,12 @@ export interface DiagItem {
 /** How many locations a single diagnostic lists. The count always stays exact. */
 export const LOCATION_LIMIT = 25;
 
-interface Entry { severity: Severity; code: string; message: string; unlocated: number; locs: Map<string, DiagLocation>; }
+interface Entry { origin: DiagOrigin; severity: Severity; code: string; message: string; unlocated: number; locs: Map<string, DiagLocation>; }
 
 const locKey = (l: DiagLocation) => JSON.stringify([l.ownerKind ?? '', l.owner ?? '', l.layerIndex ?? -1, l.layer ?? '', l.frames?.[0] ?? -1, l.frames?.[1] ?? -1, l.element ?? -1, l.source ?? '']);
 
 function cmpLoc(a: DiagLocation, b: DiagLocation): number {
-  const kind = (l: DiagLocation) => (l.ownerKind === 'document' ? 0 : l.ownerKind === 'scene' ? 1 : 2);
+  const kind = (l: DiagLocation) => (l.ownerKind === 'document' ? 0 : l.ownerKind === 'scene' ? 1 : l.ownerKind === 'symbol' ? 2 : 3);
   return kind(a) - kind(b)
     || (a.owner ?? '').localeCompare(b.owner ?? '')
     || (a.layerIndex ?? -1) - (b.layerIndex ?? -1)
@@ -64,10 +68,10 @@ function cmpLoc(a: DiagLocation, b: DiagLocation): number {
 
 export class Diagnostics {
   private map = new Map<string, Entry>();
-  add(severity: Severity, code: string, message: string, count = 1, loc?: DiagLocation): void {
-    const key = `${severity}|${code}|${message}`;
+  add(severity: Severity, code: string, message: string, count = 1, loc?: DiagLocation, origin: DiagOrigin = 'toonbridge'): void {
+    const key = `${origin}|${severity}|${code}|${message}`;
     let e = this.map.get(key);
-    if (!e) { e = { severity, code, message, unlocated: 0, locs: new Map() }; this.map.set(key, e); }
+    if (!e) { e = { origin, severity, code, message, unlocated: 0, locs: new Map() }; this.map.set(key, e); }
     if (loc) {
       const k = locKey(loc);
       if (!e.locs.has(k)) e.locs.set(k, { ...loc });
@@ -85,16 +89,16 @@ export class Diagnostics {
     return [...this.map.values()]
       .map((e) => {
         const all = [...e.locs.values()].sort(cmpLoc);
-        return { severity: e.severity, level: LEVEL[e.severity], code: e.code, message: e.message, count: e.unlocated + all.length, locations: all.slice(0, limit), hiddenLocations: Math.max(0, all.length - limit) };
+        return { origin: e.origin, severity: e.severity, level: LEVEL[e.severity], code: e.code, message: e.message, count: e.unlocated + all.length, locations: all.slice(0, limit), hiddenLocations: Math.max(0, all.length - limit) };
       })
-      .sort((a, b) => order[a.severity] - order[b.severity] || a.code.localeCompare(b.code) || a.message.localeCompare(b.message));
+      .sort((a, b) => (a.origin === b.origin ? 0 : a.origin === 'toonbridge' ? -1 : 1) || order[a.severity] - order[b.severity] || a.code.localeCompare(b.code) || a.message.localeCompare(b.message));
   }
 }
 
 /** "Scene 1 › Layer 3 (#2) · frames 5–12 · element 1 · <source>" */
 export function formatLocation(l: DiagLocation): string {
   const parts: string[] = [];
-  const head = [l.owner ? `${l.ownerKind === 'symbol' ? 'Symbol' : l.ownerKind === 'scene' ? 'Scene' : ''} "${l.owner}"`.trim() : '', l.layer !== undefined ? `layer "${l.layer}"${l.layerIndex ? ` (#${l.layerIndex})` : ''}` : ''].filter(Boolean).join(' › ');
+  const head = [l.owner ? `${l.ownerKind === 'symbol' ? 'Symbol' : l.ownerKind === 'scene' ? 'Scene' : l.ownerKind === 'page' ? 'FLA page' : ''} "${l.owner}"`.trim() : '', l.layer !== undefined ? `layer "${l.layer}"${l.layerIndex ? ` (#${l.layerIndex})` : ''}` : ''].filter(Boolean).join(' › ');
   if (head) parts.push(head);
   if (l.frames) parts.push(l.frames[0] === l.frames[1] ? `frame ${l.frames[0]}` : `frames ${l.frames[0]}–${l.frames[1]}`);
   if (l.element) parts.push(`element ${l.element}`);
