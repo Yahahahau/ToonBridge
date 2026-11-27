@@ -139,13 +139,29 @@ export class Resolver {
     return ok;
   }
 
+  /**
+   * Symbol frame shown `offset` frames after the keyframe. Graphic loop modes per Adobe ("Elements" help page, Graphic
+   * Looping): Loop / Play Once run "first frame" -> "last frame"; Loop Reverse / Reverse Play Once run "last frame" ->
+   * "first frame"; play-once modes then hold their end frame. "Last frame" (XFL lastFrame, Animate 2019+) defaults to
+   * the symbol's last frame. Without lastFrame, Loop keeps the classic behaviour (wraps through the whole symbol).
+   */
   private symbolFrame(inst: InstanceEl, offset: number, len: number): number {
     if (len <= 0) return 0;
     if (inst.symbolType === 'button') return 0;
-    const first = inst.symbolType === 'movie clip' ? 0 : inst.firstFrame;
-    if (inst.symbolType === 'graphic' && inst.loop === 'single frame') return Math.min(first, len - 1);
-    if (inst.symbolType === 'graphic' && inst.loop === 'play once') return Math.min(first + offset, len - 1);
-    return (((first + offset) % len) + len) % len;
+    const mod = (a: number, n: number) => ((a % n) + n) % n;
+    if (inst.symbolType === 'movie clip') return mod(offset, len);
+    const first = inst.firstFrame;
+    if (inst.loop === 'single frame') return Math.min(first, len - 1);
+    const ranged = inst.lastFrame !== undefined;
+    const f0 = Math.min(Math.max(0, first), len - 1);
+    const last = ranged ? Math.min(Math.max(inst.lastFrame!, f0), len - 1) : len - 1;
+    const span = last - f0 + 1;
+    switch (inst.loop) {
+      case 'play once': return Math.min(first + offset, last);
+      case 'play once reverse': return Math.max(last - offset, f0);
+      case 'loop reverse': return last - mod(offset, span);
+      default: return ranged ? f0 + mod(offset, span) : mod(first + offset, len);
+    }
   }
 
   private frameKeys = new Map<string, string>();
@@ -340,7 +356,7 @@ export class Resolver {
       if (!sym) { this.diag.loss('SYMBOL_UNRESOLVED', 'Instance of a symbol that is not in the library: skipped', 1, { ...el, source: `libraryItemName="${e.lib}"` }); return; }
       const len = Math.max(1, timelineLength(sym.timeline));
       if (e.symbolType === 'graphic' && e.lastFrame !== undefined && e.lastFrame < len - 1 && e.loop !== 'single frame')
-        this.diag.approx('GRAPHIC_LAST_FRAME', 'Graphic loop range end (Last frame) is not supported: the symbol plays to its own last frame', 1, { ...el, source: `lastFrame="${e.lastFrame}" (symbol has ${len} frames)` });
+        this.diag.approx('GRAPHIC_LAST_FRAME', 'Graphic loop range (First/Last frame) applied: frames baked within the range, as Adobe documents it (not compared with an Animate render)', 1, { ...el, source: `lastFrame="${e.lastFrame}" (symbol has ${len} frames)` });
       if (e.symbolType === 'graphic' && e.loop !== 'loop')
         this.diag.unsupported('TS_LOOP_MODE', 'Loop mode is not written as a ToonSquid loop setting; the correct frames are baked into the drawings instead', 1, { ...el, source: `loop="${e.loopSource ?? e.loop}"` });
       // Movie clips keep playing across consecutive keyframes (same symbol, same layer = the same instance in Animate);

@@ -104,7 +104,8 @@ describe('F3: previously silent source information is reported with its location
     expect(one(ds, 'INSTANCE_HIDDEN').locations[0]).toMatchObject({ layer: 'Hid' });
     expect(one(ds, 'TRANSFORM_3D').locations[0]).toMatchObject({ layer: 'ThreeD' });
     expect(one(ds, 'SCRIPT_IGNORED').locations[0]).toMatchObject({ layer: 'Once', element: 1 });
-    expect(one(ds, 'TS_LOOP_MODE').locations[0]).toMatchObject({ layer: 'Once', source: 'loop="play once"' });
+    // B3.2: reverse modes are now baked too, so they also report that no ToonSquid loop setting is written.
+    expect(one(ds, 'TS_LOOP_MODE').locations.map((l) => [l.layer, l.source])).toEqual([['Rev', 'loop="loop reverse"'], ['Once', 'loop="play once"']]);
   });
 
   it('flattened groups, zero-duration frames, stroke caps/joins/scale mode', async () => {

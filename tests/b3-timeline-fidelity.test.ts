@@ -176,3 +176,77 @@ describe('B3.1 hidden layers are kept hidden (Vi:false)', () => {
     expect(res.checks.find((c) => c.category === 'Layer references')!.details.join(' ')).toMatch(/Vi=true/);
   });
 });
+
+// ---------------------------------------------------------------------------------------------------------------
+const RGB = COLORS.map((h) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16)).join(','));
+/** Symbol frame (0-based) visible at each scene frame, read from a render of the OUTPUT file (counter symbol colours). */
+async function shownFrames(bytes: Uint8Array, n: number): Promise<number[]> {
+  const out: number[] = [];
+  for (let f = 1; f <= n; f++) {
+    const fills = fillsIn(await svgAt(bytes, f)).map((c) => RGB.indexOf(c)).filter((i) => i >= 0);
+    out.push(fills.length === 1 ? fills[0] : -1);
+  }
+  return out;
+}
+const placed = (lib: string, attrs: string, type = 'graphic') => `<DOMSymbolInstance libraryItemName="${lib}" symbolType="${type}" ${attrs}><matrix><Matrix/></matrix></DOMSymbolInstance>`;
+const play = async (attrs: string, n = 8, type = 'graphic') => {
+  const { out, a } = await convert(xfl(layer('L', frame(0, n, placed('C', attrs, type))), { C: counter('C') }));
+  expect(out.report.validation.ok).toBe(true);
+  return { frames: await shownFrames(out.bytes, n), out, a };
+};
+
+describe('B3.2 graphic loop modes, reverse playback and loop range (counter symbol C: 6 frames)', () => {
+  it('forward Loop and Play Once are unchanged', async () => {
+    expect((await play('loop="loop" firstFrame="2"')).frames).toEqual([2, 3, 4, 5, 0, 1, 2, 3]);
+    expect((await play('loop="play once" firstFrame="2"')).frames).toEqual([2, 3, 4, 5, 5, 5, 5, 5]);
+    expect((await play('loop="single frame" firstFrame="4"')).frames).toEqual([4, 4, 4, 4, 4, 4, 4, 4]);
+  });
+
+  it('Loop Reverse plays "last frame" -> "first frame" and loops (never silently forwards)', async () => {
+    const r = await play('loop="loop reverse" firstFrame="2"');
+    expect(r.frames).toEqual([5, 4, 3, 2, 5, 4, 3, 2]);
+    expect(r.a.doc.scenes[0].layers[0].frames[0].elements[0]).toMatchObject({ loop: 'loop reverse', loopSource: 'loop reverse' });
+    const d = find(r.out.report.diagnostics, 'LOOP_REVERSE');
+    expect(d).toHaveLength(1);
+    expect(d[0].severity).toBe('approx');
+    expect(d[0].locations[0]).toMatchObject({ layer: 'L', frames: [1, 8], element: 1 });
+    expect(find(r.out.report.diagnostics, 'TS_LOOP_MODE')[0].locations[0].source).toBe('loop="loop reverse"');
+  });
+
+  it('Reverse Play Once plays "last frame" -> "first frame", then holds "first frame"', async () => {
+    expect((await play('loop="play once reverse" firstFrame="1"')).frames).toEqual([5, 4, 3, 2, 1, 1, 1, 1]);
+  });
+
+  it('Last frame limits the loop range in every mode', async () => {
+    expect((await play('loop="loop" firstFrame="1" lastFrame="3"')).frames).toEqual([1, 2, 3, 1, 2, 3, 1, 2]);
+    expect((await play('loop="play once" firstFrame="0" lastFrame="3"')).frames).toEqual([0, 1, 2, 3, 3, 3, 3, 3]);
+    expect((await play('loop="loop reverse" firstFrame="1" lastFrame="3"')).frames).toEqual([3, 2, 1, 3, 2, 1, 3, 2]);
+    expect((await play('loop="play once reverse" firstFrame="2" lastFrame="4"')).frames).toEqual([4, 3, 2, 2, 2, 2, 2, 2]);
+    const d = find((await play('loop="loop" firstFrame="1" lastFrame="3"')).out.report.diagnostics, 'GRAPHIC_LAST_FRAME');
+    expect(d[0].severity).toBe('approx');
+    expect(d[0].locations[0].source).toBe('lastFrame="3" (symbol has 6 frames)');
+  });
+
+  it('reverse playback inside a nested symbol', async () => {
+    const outer = symbolXml('Outer', layer('in', frame(0, 6, placed('C', 'loop="loop reverse" firstFrame="0"'))));
+    const { out } = await convert(xfl(layer('L', frame(0, 8, placed('Outer', 'loop="loop"'))), { C: counter('C'), Outer: outer }));
+    expect(out.report.validation.ok).toBe(true);
+    expect(await shownFrames(out.bytes, 8)).toEqual([5, 4, 3, 2, 1, 0, 5, 4]);
+    expect(find(out.report.diagnostics, 'LOOP_REVERSE')[0].locations[0]).toMatchObject({ owner: 'Outer', ownerKind: 'symbol', layer: 'in' });
+  });
+
+  it('a movie clip ignores the graphic loop setting (plays forwards, no reverse report)', async () => {
+    const r = await play('loop="loop reverse"', 8, 'movie clip');
+    expect(r.frames).toEqual([0, 1, 2, 3, 4, 5, 0, 1]);
+    expect(find(r.out.report.diagnostics, 'LOOP_REVERSE')).toEqual([]);
+  });
+
+  it('reverse frames are written as one-frame drawings that each start the full clip at the right frame (Time)', async () => {
+    const { out } = await play('loop="loop reverse" firstFrame="2"', 4);
+    const scene = (await readBack(out.bytes)).get('Scene 1')!;
+    const cs = contents(scene, timelineLayers(scene)[0].id);
+    const time = (d: Record<string, unknown>) => { const K = d.K as unknown[] | undefined; return K ? (K[1] as { v: number[] }).v[0] : 1; };
+    expect(cs.map((c) => [c.s, c.e, c.d.Na, time(c.d)])).toEqual([[1, 1, 'C', 6], [2, 2, 'C', 5], [3, 3, 'C', 4], [4, 4, 'C', 3]]);
+    expect(new Set(cs.map((c) => (c.d.cl as { id: string }).id)).size).toBe(1);
+  });
+});

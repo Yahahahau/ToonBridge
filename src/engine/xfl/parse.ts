@@ -1,7 +1,7 @@
 // XFL reader: ZIP entries -> IR (Doc). Preserves everything it can; reports the rest.
 import type { AnimateFilter, ColorEffect } from '../effects/plan';
 import type { DiagLocation, Diagnostics } from '../diagnostics';
-import type { Doc, Element, EdgeRec, Frame, InstanceEl, Layer, Matrix, Paint, RGBA, ShapeEl, StrokeMeta, StrokeStyle, SymbolDef, Timeline, TweenInfo } from '../ir';
+import type { Doc, Element, EdgeRec, Frame, InstanceEl, Layer, LoopMode, Matrix, Paint, RGBA, ShapeEl, StrokeMeta, StrokeStyle, SymbolDef, Timeline, TweenInfo } from '../ir';
 import { compose, IDENTITY } from '../geometry/matrix';
 import { hex, sha1 } from '../util';
 import { parseEdge } from './edges';
@@ -126,11 +126,12 @@ function parseInstance(n: XNode, diag: Diagnostics, loc?: DiagLocation): Instanc
   const st = n.attrs.symbolType;
   const symbolType = st === 'graphic' ? 'graphic' : st === 'button' ? 'button' : 'movie clip';
   const loopAttr = n.attrs.loop;
-  // Mapping kept exactly as before (unknown values -> "loop"); reverse modes are now REPORTED (not converted yet).
-  const loop = loopAttr === 'play once' ? 'play once' : loopAttr === 'single frame' ? 'single frame' : 'loop';
+  // Known modes are kept as they are (B3.2: the reverse modes too); unknown values -> "loop" (reported).
+  const loop: LoopMode = loopAttr !== undefined && KNOWN_LOOPS.has(loopAttr) ? (loopAttr as LoopMode) : 'loop';
   const at = (src: string) => loc && { ...loc, source: `<DOMSymbolInstance libraryItemName="${lib}" ${src}>` };
-  if (loopAttr === 'loop reverse' || loopAttr === 'play once reverse')
-    diag.approx('LOOP_REVERSE', 'Reverse loop mode is not supported yet: the symbol plays forwards and loops', 1, at(`loop="${loopAttr}"`));
+  // Graphic loop modes only: Animate ignores `loop` on movie clips and buttons.
+  if ((loopAttr === 'loop reverse' || loopAttr === 'play once reverse') && symbolType === 'graphic')
+    diag.approx('LOOP_REVERSE', 'Reverse loop mode: frames are baked in reverse order ("last frame" to "first frame", as Adobe documents it; not compared with an Animate render). ToonSquid has no reverse loop mode, so each frame is its own drawing showing the right symbol frame (Time)', 1, at(`loop="${loopAttr}"`));
   else if (loopAttr !== undefined && !KNOWN_LOOPS.has(loopAttr))
     diag.warn('LOOP_UNKNOWN', 'Unknown loop mode: played as "loop"', 1, at(`loop="${loopAttr}"`));
   const tpn = child(child(n, 'transformationPoint') ?? ({ children: [] } as unknown as XNode), 'Point');

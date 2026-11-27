@@ -20,7 +20,8 @@ export interface ShapeEl {
   /** Set when this shape came from a flattened DOMGroup: shapes of the same group share the id (metadata only). */
   group?: number;
 }
-export type LoopMode = 'loop' | 'play once' | 'single frame';
+/** Graphic loop modes. The reverse modes exist since Animate 2019 (XFL `loop="loop reverse"` / `"play once reverse"`). */
+export type LoopMode = 'loop' | 'play once' | 'single frame' | 'loop reverse' | 'play once reverse';
 export interface InstanceEl {
   type: 'instance';
   lib: string;
