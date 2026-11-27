@@ -76,7 +76,7 @@ These unblock items in the audit. Each needs a small file made **in ToonSquid** 
 | Item | Value |
 |---|---|
 | File | `B3_device_check.tsproj` (239,042 bytes, sha1 `b7331cd01a2afe90bbdbfb2e9d6dde4ce8f7eb24`) |
-| Download | GitHub pre-release `b3-device-check-1` (see the release page of the repository). Not committed: `*.tsproj` is gitignored |
+| Download | Private claude.ai artifact page *B3 device check* (owner's link: https://claude.ai/artifact/JXncmdxzabcup67m8tLmX8): button **Download package** saves `B3_device_check_package.zip` (`.tsproj` + reference image + README). Also attached to the chat of 2026-11-27. A GitHub Release could not be created from the session that made it (release API refused). Not committed: `*.tsproj` is gitignored; rebuild it with the script below |
 | Made by | `npx tsx scripts/device/make-b3-device-check.ts out.tsproj`: a hand-written **synthetic XFL test fixture** run through the normal pipeline (parse → resolve → write → validate). The `.tsproj` is not edited by hand; rebuilding gives the same sha1 |
 | Timeline | Scene `B3 device check`, 1920×1080, **12 fps, 24 frames** (2 s) |
 | Library | `Counter 1-6` (6 frames: frame *n* shows *n* squares, each frame its own colour), `Ball` (one blue square) |
@@ -95,7 +95,7 @@ Layers, top to bottom as ToonSquid should list them:
 
 ### Steps on the iPad
 
-1. Download `B3_device_check.tsproj` on the iPad (release page → Assets), then open it in ToonSquid (Files → Share → ToonSquid, or ToonSquid's import). Write down any alert text exactly.
+1. On the iPad, open the artifact page and tap **Download package**, then open the zip in Files to unzip it (or save the `.tsproj` attached in the chat). Check the sha1 if you can. Open `B3_device_check.tsproj` in ToonSquid (Files → Share → ToonSquid, or ToonSquid's import). Write down any alert text exactly.
 2. Open scene `B3 device check`. Take a screenshot of the canvas and the full layer list (**B3-01, B3-02**).
 3. Tap the visibility toggle of `HIDDEN - should not show`: the canvas should turn magenta. Screenshot, then toggle it back off (**B3-03**). Do the same for `[Guide] guide path`: a cyan square should appear near the bottom centre (**B3-04**).
 4. Go to frame 1 and step forward one frame at a time to frame 13. On each frame write the number of squares in the top row and the second row (**B3-05, B3-06**). Expected: top 1 2 3 4 5 6 1 2 3 4 5 6 1; second 6 5 4 3 2 1 6 5 4 3 2 1 6.

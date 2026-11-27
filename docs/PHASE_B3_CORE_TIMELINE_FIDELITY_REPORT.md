@@ -162,7 +162,7 @@ None of the real files has hidden layers, guide layers, reverse loops or `lastFr
 
 ## 8. To check in ToonSquid
 
-**Superseded by Phase B3.5:** the sample is now built by `scripts/device/make-b3-device-check.ts`, checked by `tests/b3-device-check.test.ts`, published as GitHub pre-release `b3-device-check-1`, and the exact steps and result table are in `TOONSQUID_DEVICE_TEST_PLAN.md` (section "Phase B3 device check"). The original description follows.
+**Superseded by Phase B3.5:** the sample is now built by `scripts/device/make-b3-device-check.ts`, checked by `tests/b3-device-check.test.ts`, offered for download from a private claude.ai artifact page (a GitHub Release could not be created from the session), and the exact steps and result table are in `TOONSQUID_DEVICE_TEST_PLAN.md` (section "Phase B3 device check"). The original description follows.
 
 The sample `B3_device_check.tsproj` is a synthetic file that is not part of the repo. It has:
 - a hidden magenta full-screen layer,
