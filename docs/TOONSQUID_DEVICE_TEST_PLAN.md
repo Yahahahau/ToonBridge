@@ -67,6 +67,18 @@ These unblock items in the audit. Each needs a small file made **in ToonSquid** 
 | Q9 | An audio clip trimmed at the start and shifted | Audio trim/offset fields |
 | Q10 | A position keyframe pair with Ease In Out (cubic) and one custom curve | Easing record `tp` / `iC` / `oC` / `md` values |
 
+## Phase B3 checks (2026-11-27)
+
+Sample: `B3_device_check.tsproj` (synthetic, made by ToonBridge from a hand-written XFL; not in the repo). 12 fps, 24 frames.
+
+| # | Check | Pass when | Result |
+|---|---|---|---|
+| B3-1 | Layer list | `HIDDEN - should not show` and `[Guide] guide path` are listed but switched off; canvas is white | |
+| B3-2 | Switch the hidden layer on | Magenta fills the canvas (art was kept) | |
+| B3-3 | Forward counter (top) | 1 → 6 squares, then again from 1 | |
+| B3-4 | Reverse counter (second row) | 6 → 1 squares, then again from 6 | |
+| B3-5 | Blurred ball | Blur grows over the frames, not only at the last frame | |
+
 ## Result log
 
 | Date | File | Checks passed | Failed | Notes / links |

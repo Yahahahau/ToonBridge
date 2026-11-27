@@ -1,6 +1,6 @@
 # Loss Catalog
 
-Audit date: 2026-11-22 · Base commit `8ffc8cb`.
+Audit date: 2026-11-22 · Base commit `8ffc8cb`. Rows fixed in Phase B3 are struck through and marked (see `PHASE_B3_CORE_TIMELINE_FIDELITY_REPORT.md`).
 
 This catalog lists every place where source data is lost or changed. For each loss it gives:
 - the **stage** that causes it,
@@ -95,21 +95,21 @@ Status: **R** = reported in the conversion report · **S** = silent.
 | P-12 | P | Frame ActionScript | — | **S** | Must never run; should still be listed |
 | P-13 | P | Layer `locked`, `outline`, colour | — | **S** | Editor state only |
 | P-14 | P | Layer `parentLayerIndex` (mask and folder membership) | — | **S** | Needed for masks |
-| P-15 | P | Loop modes `loop reverse` / `play once reverse` → `loop` | — | **S** | Plays the wrong direction |
-| P-16 | P | Graphic `lastFrame` | — | **S** | Loop range end ignored |
+| P-15 | P | ~~Loop modes `loop reverse` / `play once reverse` → `loop`~~ **Fixed in B3.2:** baked last → first | `LOOP_REVERSE` (approx) | R | Order per Adobe docs, not compared with Animate |
+| P-16 | P | ~~Graphic `lastFrame`~~ **Fixed in B3.2:** range applied | `GRAPHIC_LAST_FRAME` (approx) | R | |
 | P-17 | P | Tween `motionTweenScale="false"`, orient to path, snap | — | **S** | Scale tweened anyway |
 | P-18 | P | Instance `isVisible="false"` | — | **S** | Hidden instance shown |
 | P-19 | P | 3D (`Matrix3D`, `rotationX/Y`) | — | **S** | Flattened to 2D matrix |
 | P-20 | P | Motion object tweens (`tweenType="motion object"`) | `XFL_TWEEN_KIND` | R | Held |
 | P-21 | P | Media library items | `XFL_MEDIA` | R (count) | Names not listed |
 | P-22 | P | IK armature / pose layers | — | **S** | |
-| R-01 | R | Hidden layers dropped from file | `LAYER_HIDDEN` | R | ToonSquid could keep them hidden (`Vi:false`) |
-| R-02 | R | Guide layers dropped | `LAYER_GUIDE` | R | Motion-guide paths not mentioned |
+| R-01 | R | ~~Hidden layers dropped from file~~ **Fixed in B3.1:** kept with `Vi:false` | `LAYER_HIDDEN` (info) | R | Device check Q8 |
+| R-02 | R | ~~Guide layers dropped~~ **Fixed in B3.1:** kept hidden as `[Guide] …` | `LAYER_GUIDE` (info) | R | Guided layers still straight (`LAYER_MOTION_GUIDE`) |
 | R-03 | R | Mask layers dropped, masked layers unmasked | `LAYER_MASK` | R | **Visible change** whenever a mask is used |
 | R-04 | R | Folder layers flattened | `LAYER_FOLDER` (info) | R | |
 | R-05 | R | Shape tweens held at start | `TWEEN_SHAPE` | R | |
 | R-06 | R | Custom ease → standard ease | `TWEEN_CUSTOM_EASE` | R | |
-| R-07 | R | Colour effects and filters not interpolated in tweens (alpha only) | — | **S** | Fades jump at the end keyframe |
+| R-07 | R | ~~Colour effects and filters not interpolated in tweens~~ **Fixed in B3.3:** baked per frame | `TWEEN_FX_BAKED`, `TWEEN_COLOR_FILTER`, `TWEEN_BLEND_HELD` | R | Tint/advanced still not shown (R-08) |
 | R-08 | R | Tint and advanced colour effects dropped | `FX_NO_EQUIVALENT` | R | Exactly bakeable into vector colours |
 | R-09 | R | Inner shadow/glow, bevels, gradient filters | `FX_NO_EQUIVALENT` | R | |
 | R-10 | R | Invert / Alpha / Erase blend | `BLEND_NO_EQUIVALENT` | R | |

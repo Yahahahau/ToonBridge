@@ -1,6 +1,6 @@
 # Feature Compatibility Matrix
 
-Audit date: 2026-11-22 · Code: branch `audit/conversion-fidelity` (base `8ffc8cb`) · See also [CONVERSION_FIDELITY_AUDIT.md](CONVERSION_FIDELITY_AUDIT.md), [LOSS_CATALOG.md](LOSS_CATALOG.md).
+Audit date: 2026-11-22 · Code: branch `audit/conversion-fidelity` (base `8ffc8cb`) · **Updated for Phase B3** (2026-11-27, branch `phase-b3-core-timeline-fidelity`): hidden/guide layers, reverse loops, `lastFrame`, colour/filter tweens · See also [CONVERSION_FIDELITY_AUDIT.md](CONVERSION_FIDELITY_AUDIT.md), [LOSS_CATALOG.md](LOSS_CATALOG.md).
 
 **No feature is "Fully supported and device-verified".** No ToonBridge output has yet been opened in ToonSquid with recorded results, so the best possible status today is *Structurally supported, device-unverified*.
 
@@ -46,9 +46,9 @@ Statuses:
 | Feature | Parse | IR | Resolve | Write | Valid. | Device | Status | What is lost or approximated | TS format |
 |---|---|---|---|---|---|---|---|---|---|
 | Layers and order | ✓ | ✓ | ✓ (reversed, bottom-first) | ✓ `lO` | ✓ | ✗ | SSDU | — | Observed |
-| Hidden layers | ✓ | ✓ | **dropped** | ✗ | ✗ | ✗ | Partial (reported `LAYER_HIDDEN`) | The layer and its art are not in the file at all | **Observed:** timeline layer `Vi:false` (could be kept hidden) |
+| Hidden layers | ✓ | ✓ | ✓ kept, also in nested symbols (B3.1) | ✓ `Vi:false` | ✓ `Vi` | ✗ | SSDU (`LAYER_HIDDEN` info) | — (art kept, layer switched off; never occludes art below) | **Observed:** timeline layer `Vi:false` in an app-made file; absent = visible |
 | Locked layers | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | Unsupported (not reported) | Lock state | Lock exists (handbook); key **unknown** |
-| Guide layers | ✓ | ✓ | dropped | ✗ | ✗ | ✗ | Partial (reported) | Guide art (not rendered in Animate either); **motion-guide paths** for classic tweens lost and not reported as such | — |
+| Guide layers | ✓ | ✓ | ✓ kept hidden, named `[Guide] …` (B3.1) | ✓ `Vi:false` | ✓ | ✗ | SSDU (`LAYER_GUIDE` info) | Guided layers still move in a straight line (`LAYER_MOTION_GUIDE`) | No guide concept in ToonSquid; hidden layer + name |
 | Mask layers | ✓ kind | ✓ | **dropped; masked layers drawn unmasked** | ✗ | ✗ | ✗ | Unsupported (reported) | Masking: visible art changes | Handbook: alpha mask, mask layer **below** the masked layer, hide/invert. **Observed:** `MD:{cl,hM,iv,v}` on timeline and path layers (meaning inferred, unconfirmed) |
 | Masked-layer link (`parentLayerIndex`) | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | Unsupported (not reported) | Which layers a mask applies to | See mask |
 | Folder layers | ✓ kind | ✓ | flattened (children kept) | ✗ | ✗ | ✗ | Approx (reported info) | Folder structure | Group layers; JSON **unknown** |
@@ -70,14 +70,14 @@ Statuses:
 | Button symbols | ✓ | ✓ | frame 1 only | ✓ | ✓ | ✗ | Approx (reported) | Over/Down/Hit states | — |
 | Nested symbols | ✓ | ✓ | ✓ recursive, cycle-guarded | ✓ | ✓ cycles | ✗ | SSDU | — | Observed |
 | Loop modes: loop / play once / single frame | ✓ | ✓ | ✓ (frame maths; `lo` not written) | ~ | ✗ | ✗ | Partial | Loop mode is not set on the symbol layer; correct frames come from drawing splits | `lo:{md,en,s,e}` observed, meanings **unknown** |
-| Loop modes: loop reverse / play once reverse (Animate 2019+) | ✗ (→ `loop`) | ✗ | wrong direction | — | ✗ | ✗ | Approx (**silent**) | Plays forwards | Boomerang only (not the same) |
+| Loop modes: loop reverse / play once reverse (Animate 2019+) | ✓ | ✓ | ✓ baked last → first (B3.2) | one-frame drawings + Time | ✓ | ✗ | Approx (`LOOP_REVERSE`) | Order per Adobe's documentation, not compared with an Animate render; no ToonSquid loop setting | No reverse mode (handbook: Don't Loop / Normal / Boomerang) |
 | First-frame offset | ✓ | ✓ | ✓ | ✓ (Time) | ✗ | ✗ | SSDU | — | — |
-| Graphic `lastFrame` (Animate 2019+) | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | Unsupported (**silent**) | Loop range end | `lo.s/e` may hold a range (**unknown**) |
+| Graphic `lastFrame` (Animate 2019+) | ✓ | ✓ | ✓ range applied in every mode (B3.2) | baked | ✓ | ✗ | Approx (`GRAPHIC_LAST_FRAME`) | Not compared with an Animate render | `lo.s/e` may hold a range (**unknown**, not written) |
 | Motion (classic) tweens | ✓ | ✓ | baked per frame (one drawing per frame) | ✓ | ✗ | ✗ | Approx (reported) | Editable tween; easing model unverified | **Observed:** keyframe tracks `K` (`pos`, `sX`, `sY`, `rot`, `op`, `ti`) with easing records `tp`, `iC`, `oC`, `md` on clip and vector layers |
 | Custom easing | detected only | flag | standard ease | — | ✗ | ✗ | Approx (reported) | Curve shape | Custom easing curves exist (handbook); JSON **unknown** |
 | Rotation (auto / CW / CCW × n) | ✓ | ✓ | ✓ | baked | ✗ | ✗ | SSDU | — | — |
 | Tween options: scale off, orient to path, snap | ✗ | ✗ | scale always tweened | — | ✗ | ✗ | Approx (**silent**) | "Scale" unchecked still scales | — |
-| Colour-effect / filter tweens | start key only (alpha lerped) | ✓ | alpha only | ✓ alpha | ✗ | ✗ | Approx (**silent**) | Tint/brightness/filter fades jump | `op` track observed |
+| Colour-effect / filter tweens | ✓ | ✓ | ✓ interpolated with the eased time (B3.3) | baked effect rows per frame | ✓ | ✗ | Approx (`TWEEN_FX_BAKED`) | Tint/advanced colour cannot be shown (`TWEEN_COLOR_FILTER`); filters differing in kind/order and blend modes held at start (`TWEEN_COLOR_FILTER`, `TWEEN_BLEND_HELD`) | `op` track observed (curve encoding not decoded); no K track observed on effect rows 100/101/104 |
 | Motion tweens (object-based, "motion object") | ✗ | → `other` | held | — | ✗ | ✗ | Unsupported (reported) | Whole tween | — |
 | Shape tweens | ✓ kind | ✓ | held at start (reported) | — | ✗ | ✗ | Unsupported | All in-betweens | No morph structure observed |
 | Symbol replacement (swap between keyframes) | ✓ | ✓ | ✓ new drawing; tween between two symbols held | ✓ | ✗ | ✗ | SSDU | — | — |
