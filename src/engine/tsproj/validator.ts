@@ -108,6 +108,8 @@ export function validateTsproj(SQL: SqlJsStatic, bytes: Uint8Array): ValidationR
         if (l.d.Id !== lid) lerrs.push(`${id}: layer ${lid} Id mismatch`);
         if (l.type === LT.TIMELINE) {
           if (!(c.lO as string[]).includes(lid)) lerrs.push(`${id}: timeline layer ${lid} not in lO`);
+          // Visibility: app-made files store only Vi:false (hidden); an absent key means visible.
+          if ('Vi' in l.d && l.d.Vi !== false) lerrs.push(`${id}: timeline layer ${lid} has visibility Vi=${JSON.stringify(l.d.Vi)} (only false is known)`);
           let prevEnd = 0;
           const spans: [number, number][] = [];
           for (const did of l.d.dr as string[]) {

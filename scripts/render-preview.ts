@@ -112,6 +112,7 @@ export async function renderTsprojSvg(file: string, frame: number, useEffects = 
     for (const lid of lO) {
       const row = q(db, `select type,data from layers where id='${lid}'`)[0];
       if ((row[0] as number) !== 10) continue;
+      if (j(row[1]).Vi === false) continue; // hidden layer (switched off): not drawn
       for (const did of j(row[1]).dr) {
         const dr = j(q(db, `select data from drawings where id='${did}'`)[0][0]);
         if (f < dr.s || f > dr.e) continue;

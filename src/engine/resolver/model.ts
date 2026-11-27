@@ -23,7 +23,8 @@ export type Content =
   | { kind: 'clip'; ref: ClipRef };
 
 export interface TSDrawing { id: string; s: number; e: number; content: { id: string; c: Content }[]; }
-export interface TSLayer { id: string; name: string; drawings: TSDrawing[]; }
+/** hidden: written with the layer switched off (Vi:false, the visibility flag observed on app-made timeline layers). */
+export interface TSLayer { id: string; name: string; drawings: TSDrawing[]; hidden?: boolean; }
 /** blendsInside: the clip holds blended content, so whoever shows it should isolate it (see resolver). */
 export interface TSClip { id: string; name: string; isScene: boolean; layers: TSLayer[]; backgroundId: string; frames: number; blendsInside?: boolean; }
 export interface TSProject {

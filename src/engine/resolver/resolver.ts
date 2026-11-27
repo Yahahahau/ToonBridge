@@ -63,7 +63,7 @@ export class Resolver {
   private shapeCache = new WeakMap<ShapeEl, Map<string, Content | null>>();
   readonly stats: Record<string, number> = {
     scenes: 0, symbolClips: 0, drawings: 0, vectorLayers: 0, clipLayers: 0, contours: 0, nodes: 0,
-    tweenFramesBaked: 0, hiddenLayersSkipped: 0, skewedInstances: 0, perspectiveEffects: 0, bakedSkewShapes: 0, seamUnderlays: 0,
+    tweenFramesBaked: 0, hiddenLayersKept: 0, guideLayersKept: 0, skewedInstances: 0, perspectiveEffects: 0, bakedSkewShapes: 0, seamUnderlays: 0,
   };
   private projectId: string;
 
@@ -91,6 +91,14 @@ export class Resolver {
     return layer.parentIndex !== undefined && o?.layers[layer.parentIndex]?.kind === 'guide';
   }
 
+  /**
+   * Layers written to the file: normal layers (visible or hidden) and guide layers. Hidden and guide layers are kept as
+   * hidden ToonSquid layers (B3.1), so their art is still in the file. Mask and folder layers are not converted.
+   */
+  private converted(layer: Layer): boolean { return layer.kind === 'normal' || layer.kind === 'guide'; }
+  /** Written but switched off (Vi:false): hidden in Animate, or a guide layer (never shown in Animate's output). */
+  private writtenHidden(layer: Layer): boolean { return layer.kind === 'guide' || !layer.visible; }
+
   run(): TSProject {
     const sceneIds: string[] = [];
     this.doc.scenes.forEach((sc, i) => {
@@ -117,7 +125,7 @@ export class Resolver {
     stack.add(sym.name);
     let ok = true;
     for (const l of sym.timeline.layers) {
-      if (l.kind !== 'normal' || !l.visible) continue;
+      if (!this.converted(l)) continue;
       if (l.frames.length > 1 || (l.frames[0] && (l.frames[0].index !== 0 || l.frames[0].tween))) { ok = false; break; }
       for (const f of l.frames) for (const e of f.elements) {
         if (e.type !== 'instance') continue;
@@ -159,7 +167,7 @@ export class Resolver {
     const parts: string[] = [];
     try {
       for (const layer of sym.timeline.layers) {
-        if (layer.kind !== 'normal' || !layer.visible) { parts.push('-'); continue; }
+        if (!this.converted(layer)) { parts.push('-'); continue; }
         const els = this.resolveFrame(layer, symFrame, h);
         parts.push(els && els.length ? els.map((e) => e.sig).join(';') : '');
       }
@@ -223,11 +231,17 @@ export class Resolver {
     const conv: Layer[] = [];
     for (const layer of ordered) {
       if (layer.kind === 'folder') { this.diag.info('LAYER_FOLDER', 'Layer folder is flattened (its layers are converted as ordinary layers)', 1, this.loc(layer)); continue; }
-      if (layer.kind === 'guide') { this.diag.loss('LAYER_GUIDE', 'Guide layer is not converted (Animate does not show it in the output either)', 1, this.loc(layer)); continue; }
       if (layer.kind === 'mask') { this.diag.loss('LAYER_MASK', 'Mask layer is not converted; the layers it masks are drawn without masking', 1, this.loc(layer)); continue; }
-      if (!layer.visible) { this.diag.loss('LAYER_HIDDEN', 'Hidden layer is not converted (it is left out of the file)', 1, this.loc(layer)); this.stats.hiddenLayersSkipped++; continue; }
+      if (layer.kind === 'guide') {
+        this.diag.info('LAYER_GUIDE', 'Guide layer kept as a hidden layer named "[Guide] …" (Animate never shows guides in its output; visibility flag Vi:false as stored by the app)', 1, this.loc(layer, undefined, undefined, undefined, layer.visible ? 'layerType="guide"' : 'layerType="guide" visible="false"'));
+        this.stats.guideLayersKept++;
+      } else if (!layer.visible) {
+        this.diag.info('LAYER_HIDDEN', 'Hidden layer kept hidden: its art is in the file with the layer switched off (visibility flag Vi:false as stored by the app)', 1, this.loc(layer, undefined, undefined, undefined, 'visible="false"'));
+        this.stats.hiddenLayersKept++;
+      }
       conv.push(layer);
     }
+    const off = conv.map((l) => this.writtenHidden(l));
     // Resolve every frame once (bottom-first), so each shape can see what is drawn above it in the same frame.
     const resolved = conv.map((layer) => srcFrames.map((j) => this.resolveFrame(layer, j, preH)));
     /** Shapes drawn above element `ci` of layer `li` at frame `k` (later elements of the same frame, then higher layers). */
@@ -235,13 +249,15 @@ export class Resolver {
       const out: ShapeEl[] = [];
       const own = resolved[li][k];
       if (own) for (let c = ci + 1; c < own.length; c++) { const s = own[c].shape; if (s) out.push(s); }
-      for (let l = li + 1; l < conv.length; l++) for (const el of resolved[l][k] ?? []) if (el.shape) out.push(el.shape);
+      // A hidden layer above draws nothing, so it must not hide (or receive the bleed of) anything below it.
+      for (let l = li + 1; l < conv.length; l++) if (!off[l]) for (const el of resolved[l][k] ?? []) if (el.shape) out.push(el.shape);
       return out;
     };
     conv.forEach((layer, li) => {
       const lid = uuid5(`${id}|L${li}`, this.projectId);
       const drawings = this.buildLayer(id, li, layer, resolved[li], preH, (k, ci) => above(li, k, ci), srcFrames);
-      layers.push({ id: lid, name: layer.name || `Layer ${li + 1}`, drawings });
+      const name = layer.name || `Layer ${li + 1}`;
+      layers.push(off[li] ? { id: lid, name: layer.kind === 'guide' ? `[Guide] ${name}` : name, drawings, hidden: true } : { id: lid, name, drawings });
     });
     const blendsInside = resolved.some((fr) => fr.some((els) => (els ?? []).some((e) => e.inst?.bm !== undefined)));
     const clip: TSClip = { id, name, isScene, layers, backgroundId: uuid5(`${id}|BG`, this.projectId), frames: srcFrames.length, blendsInside };

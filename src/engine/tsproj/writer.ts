@@ -83,7 +83,10 @@ function writeAnim(SQL: SqlJsStatic, p: TSProject, clip: TSClip): Uint8Array {
   const insD = db.prepare('INSERT INTO drawings(id,data) VALUES (?,?)');
   insL.run([clip.backgroundId, LT.BACKGROUND, blob({ Na: 'Background', LD: FIXED_DATE, V: 3, v: 2, if: true, Id: clip.backgroundId })]);
   for (const l of clip.layers) {
-    insL.run([l.id, LT.TIMELINE, blob({ Na: l.name, LD: FIXED_DATE, V: 3, v: 3, dr: l.drawings.map((d) => d.id), Id: l.id })]);
+    // Vi:false = layer switched off, exactly as an app-made file stores a hidden timeline layer (00_baseline "Layer 15").
+    const tl: Record<string, unknown> = { Na: l.name, LD: FIXED_DATE, V: 3, v: 3, dr: l.drawings.map((d) => d.id), Id: l.id };
+    if (l.hidden) tl.Vi = false;
+    insL.run([l.id, LT.TIMELINE, blob(tl)]);
     for (const d of l.drawings) {
       insD.run([d.id, blob({ lMD: FIXED_DATE, l: l.id, id: d.id, s: d.s, ly: d.content.map((c) => c.id), v: 3, e: d.e })]);
       for (const c of d.content) {
@@ -119,7 +122,7 @@ function writeData(SQL: SqlJsStatic, p: TSProject): Uint8Array {
   db.run('INSERT INTO meta_i(key,value) VALUES (?,?)', ['v', 1]);
   db.run('INSERT INTO meta_i(key,value) VALUES (?,?)', ['sv', 2]);
   const scene = p.clips.find((c) => c.id === p.sceneIds[0])!;
-  const firstLayer = scene.layers.find((l) => l.drawings.length);
+  const firstLayer = scene.layers.find((l) => !l.hidden && l.drawings.length) ?? scene.layers.find((l) => l.drawings.length);
   const firstDrawing = firstLayer?.drawings[0];
   const pcs: unknown[] = [];
   for (const c of p.clips) {
