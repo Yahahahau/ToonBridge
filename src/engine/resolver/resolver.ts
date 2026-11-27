@@ -8,6 +8,7 @@ import { shearEffect } from '../geometry/perspective';
 import type { Contour } from '../geometry/contours';
 import { CoverIndex, coveredChains } from '../geometry/cover';
 import { blendCode, planColor, planFilters, toTSEffects, TS_BLEND_MODES, type PlannedEffect } from '../effects/plan';
+import { describeChange, lerpColor, lerpFilters, NO_COLOR, sameFilterShape } from '../effects/tween';
 import { Diagnostics, type DiagLocation } from '../diagnostics';
 import { chainToContour, fillContours, seamContours, strokeContours, usedFillIds, usedStrokeIds } from '../geometry/contours';
 import { hex, rnd, sha1, uuid5 } from '../util';
@@ -383,9 +384,9 @@ export class Resolver {
           this.diag.approx('TWEEN_SCALE_FLAG', 'Tween option "Scale" is off in Animate, but the scale is still interpolated', 1, { ...el, source: 'motionTweenScale="false"' });
         if (f.tween.orientToPath && !this.isGuided(layer))
           this.diag.info('TWEEN_ORIENT_NO_GUIDE', 'Tween option "Orient to path" has no effect without a motion guide (same as in Animate)', 1, { ...el, source: 'motionTweenOrientToPath="true"' });
-        const colourKey = (x: InstanceEl) => JSON.stringify({ c: x.colorFx ? { ...x.colorFx, alphaMultiplier: 1 } : null, f: x.filters, b: x.blend });
-        if (colourKey(e) !== colourKey(tweenEnd))
-          this.diag.approx('TWEEN_COLOR_FILTER', 'Colour effect / filter change in a tween is not interpolated: start values are used until the end keyframe (alpha is interpolated)', 1, el);
+        // B3.3: colour effect / filter values are interpolated with the same eased time and baked frame by frame into
+        // the ToonSquid effects already written for keyframes (no keyframe track for these effects has been observed).
+        const fxAt = this.tweenEffects(e, tweenEnd, el);
         // Rotation/scale are interpolated about the START keyframe's transformation point; its end position is where the
         // end matrix puts that same local point, so both keyframes are reproduced exactly.
         const p2 = apply(Me2, e.tp);
@@ -398,6 +399,7 @@ export class Resolver {
         const at = (u: number): InstState => ({
           ...st, p: [st.p[0] + (p2[0] - st.p[0]) * u, st.p[1] + (p2[1] - st.p[1]) * u], rot: dec.rot + delta * u,
           sx: dec.sx + (d2.sx - dec.sx) * u, sy: dec.sy + (d2.sy - dec.sy) * u, h: h + (h2 - h) * u, alpha: e.alpha + (end.alpha - e.alpha) * u,
+          fx: fxAt ? fxAt(u) : st.fx,
         });
         // Guard: the interpolation must land exactly on both keyframes. If it does not (a matrix the model cannot
         // represent), hold the start keyframe and say so, instead of producing a jumping in-between.
@@ -491,6 +493,35 @@ export class Resolver {
     }
     flush(frames.length - 1);
     return drawings;
+  }
+
+  /**
+   * B3.3 colour effect / filter tween between keyframe `e` and `end`. Returns the effects at eased time u (0..1) when a
+   * value that can be written changes, else null (start values kept). Reports what was baked, held or cannot be shown.
+   */
+  private tweenEffects(e: InstanceEl, end: InstanceEl, el: DiagLocation): ((u: number) => TSEffect[]) | null {
+    if (e.blend !== end.blend)
+      this.diag.approx('TWEEN_BLEND_HELD', 'Blend mode differs between the tween\'s keyframes: blend modes cannot be interpolated, the start keyframe\'s mode is used until the end keyframe', 1, { ...el, source: `blendMode "${e.blend}" → "${end.blend}"` });
+    const A = { ...(e.colorFx ?? NO_COLOR), alphaMultiplier: 1 }, B = { ...(end.colorFx ?? NO_COLOR), alphaMultiplier: 1 };
+    const colourChanged = JSON.stringify(A) !== JSON.stringify(B);   // alpha is interpolated separately (layer opacity)
+    const filtersChanged = JSON.stringify(e.filters) !== JSON.stringify(end.filters);
+    if (!colourChanged && !filtersChanged) return null;
+    const what = describeChange(e.filters, end.filters, e.colorFx, end.colorFx);
+    const shape = sameFilterShape(e.filters, end.filters);
+    if (filtersChanged && !shape)
+      this.diag.approx('TWEEN_COLOR_FILTER', 'Filters differ in kind or order between the tween\'s keyframes: they are not interpolated, the start keyframe\'s filters are used until the end keyframe', 1, { ...el, source: `[${e.filters.map((f) => f.kind).join(', ')}] → [${end.filters.map((f) => f.kind).join(', ')}]` });
+    const unwritable = (c: typeof A) => JSON.stringify([c.tintMultiplier, c.tintColor ?? '', c.redMultiplier, c.greenMultiplier, c.blueMultiplier, c.redOffset, c.greenOffset, c.blueOffset, c.alphaOffset]);
+    if (unwritable(A) !== unwritable(B))
+      this.diag.approx('TWEEN_COLOR_FILTER', 'Tint / advanced colour change in a tween has no ToonSquid equivalent: it is not shown in any frame (see FX_NO_EQUIVALENT)', 1, { ...el, source: what });
+    const at = (u: number): TSEffect[] => {
+      const ie: InstanceEl = { ...e, colorFx: lerpColor(e.colorFx, end.colorFx, u), filters: shape ? lerpFilters(e.filters, end.filters, u)! : e.filters };
+      const saved = this.diag;
+      this.diag = this.quiet;                                   // keyframe values are reported by their own keyframes
+      try { return this.instanceEffects(ie).fx; } finally { this.diag = saved; }
+    };
+    if (JSON.stringify(at(0)) === JSON.stringify(at(1))) return null;
+    this.diag.approx('TWEEN_FX_BAKED', 'Colour effect / filter change interpolated and baked frame by frame into ToonSquid effects (each value moves with the tween\'s eased time, like position; not compared with an Animate render)', 1, { ...el, source: what });
+    return at;
   }
 
   /**

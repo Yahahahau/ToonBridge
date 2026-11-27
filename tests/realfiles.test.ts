@@ -40,11 +40,13 @@ describe.skipIf(!have)('real Boyfriend_But_Better.fla (XFL, damaged central dire
     const a2 = convertAnalysis(analyzeInput(bytes, 'bf.fla'), SQL);
     expect(a2.report.output.sha1).toBe(a1.report.output.sha1);
   });
-  it('Phase B1 (diagnostics only) leaves the converted bytes unchanged', async () => {
-    // sha1 of the default conversion before Phase B1 (commit b3157d8). Update deliberately when a later phase changes output.
+  it('output changes only where a phase deliberately changes it', async () => {
+    // sha1 of the default conversion. Phases B1, B2, B3.1 and B3.2 left it unchanged (dca54e90…, commit b3157d8).
+    // B3.3 changed it on purpose: the only difference is the 21 Gaussian Blur rows of "retry confirm", whose blur now
+    // follows the tween (Blur 67×67 → 177×18) instead of holding the start value. Update deliberately, with a reason.
     const SQL = await nodeSql();
     const r = convertAnalysis(analyzeInput(new Uint8Array(readFileSync(fla!)), 'bf.fla'), SQL);
-    expect(r.report.output.sha1).toBe('dca54e90d49ba980d3cbfcdc3b719122f8ff2f38');
+    expect(r.report.output.sha1).toBe('aabaeeda4955577686b653988d48101b8278343a');
     // Tween diagnostics count tweens: 15 interpolated, 6 symbol swaps, and no "unpaired" for last keyframes.
     const d = (c: string) => r.report.diagnostics.filter((x) => x.code === c).reduce((n, x) => n + x.count, 0);
     expect(d('TWEEN_BAKED')).toBe(15);

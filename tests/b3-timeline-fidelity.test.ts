@@ -250,3 +250,107 @@ describe('B3.2 graphic loop modes, reverse playback and loop range (counter symb
     expect(new Set(cs.map((c) => (c.d.cl as { id: string }).id)).size).toBe(1);
   });
 });
+
+// ---------------------------------------------------------------------------------------------------------------
+const still = symbolXml('S', layer('art', frame(0, 1, box('#808080'))));
+const tweenDoc = (startInner: string, endInner: string, startAttrs = '', endAttrs = '', n = 10) => xfl(layer('Tw',
+  frame(0, n, `<DOMSymbolInstance libraryItemName="S" symbolType="graphic" ${startAttrs}><matrix><Matrix tx="10" ty="10"/></matrix>${startInner}</DOMSymbolInstance>`, 'tweenType="motion"') +
+  frame(n, 1, `<DOMSymbolInstance libraryItemName="S" symbolType="graphic" ${endAttrs}><matrix><Matrix tx="90" ty="10"/></matrix>${endInner}</DOMSymbolInstance>`)), { S: still });
+const blurF = (x: number, y: number) => `<filters><BlurFilter blurX="${x}" blurY="${y}" quality="1"/></filters>`;
+const adjF = (b: number, c: number, s: number, h: number) => `<filters><AdjustColorFilter brightness="${b}" contrast="${c}" saturation="${s}" hue="${h}"/></filters>`;
+const colorFx = (attrs: string) => `<color><Color ${attrs}/></color>`;
+/** Per scene frame: the symbol layer's opacity and its effect rows (type -> fields), read from the output file. */
+async function effectsPerFrame(bytes: Uint8Array) {
+  const scene = (await readBack(bytes)).get('Scene 1')!;
+  return contents(scene, timelineLayers(scene)[0].id).map((c) => ({
+    s: c.s, op: (c.d.op as number | undefined) ?? 1,
+    fx: ((c.d.Ef as string[] | undefined) ?? []).map((id) => { const r = scene.layers.get(id)!; const { Id: _i, LI: _l, LD: _d, V: _v, ...rest } = r.d; void _i; void _l; void _d; void _v; return { type: r.type, ...rest } as Json; }),
+  }));
+}
+
+describe('B3.3 colour effect / filter tweens', () => {
+  it('a Blur change is interpolated frame by frame and lands exactly on both keyframes', async () => {
+    const { out } = await convert(tweenDoc(blurF(4, 4), blurF(40, 40)));
+    expect(out.report.validation.ok).toBe(true);
+    const fr = await effectsPerFrame(out.bytes);
+    const r = fr.map((f) => (f.fx[0] as { r: number }).r);
+    expect(fr.map((f) => f.fx[0].type)).toEqual(Array(11).fill(100));
+    const keyStart = (await effectsPerFrame((await convert(tweenDoc(blurF(4, 4), blurF(4, 4)))).out.bytes))[0].fx[0];
+    const keyEnd = (await effectsPerFrame((await convert(xfl(layer('K', frame(0, 1, `<DOMSymbolInstance libraryItemName="S" symbolType="graphic"><matrix><Matrix/></matrix>${blurF(40, 40)}</DOMSymbolInstance>`)), { S: still }))).out.bytes))[0].fx[0];
+    expect(fr[0].fx[0]).toEqual(keyStart);
+    expect(fr[10].fx[0]).toEqual(keyEnd);
+    for (let i = 1; i < r.length; i++) expect(r[i]).toBeGreaterThan(r[i - 1]);
+    const d = find(out.report.diagnostics, 'TWEEN_FX_BAKED');
+    expect(d).toHaveLength(1);
+    expect(d[0].severity).toBe('approx');
+    expect(d[0].locations[0]).toMatchObject({ layer: 'Tw', frames: [1, 10], element: 1, source: 'Blur 4×4 → 40×40' });
+    expect(find(out.report.diagnostics, 'TWEEN_COLOR_FILTER')).toEqual([]);
+  });
+
+  it('the tween ease applies to effect values like it does to position', async () => {
+    const lin = (await effectsPerFrame((await convert(tweenDoc(blurF(4, 4), blurF(40, 40)))).out.bytes)).map((f) => (f.fx[0] as { r: number }).r);
+    const easedIn = (await effectsPerFrame((await convert(xfl(layer('Tw',
+      frame(0, 10, `<DOMSymbolInstance libraryItemName="S" symbolType="graphic"><matrix><Matrix tx="10" ty="10"/></matrix>${blurF(4, 4)}</DOMSymbolInstance>`, 'tweenType="motion" acceleration="-100"') +
+      frame(10, 1, `<DOMSymbolInstance libraryItemName="S" symbolType="graphic"><matrix><Matrix tx="90" ty="10"/></matrix>${blurF(40, 40)}</DOMSymbolInstance>`)), { S: still }))).out.bytes)).map((f) => (f.fx[0] as { r: number }).r);
+    expect(easedIn[5]).toBeLessThan(lin[5]);              // ease in: slower at the start
+    expect(easedIn[0]).toBe(lin[0]);
+    expect(easedIn[10]).toBe(lin[10]);
+  });
+
+  it('Adjust Color values (brightness, contrast, saturation, hue) are interpolated', async () => {
+    const { out } = await convert(tweenDoc(adjF(0, 0, 0, 0), adjF(50, 20, -40, 90)));
+    const fr = await effectsPerFrame(out.bytes);
+    expect(fr.every((f) => f.fx.length === 1 && f.fx[0].type === 104)).toBe(true);
+    const h = fr.map((f) => (f.fx[0] as { h?: number }).h ?? 0);
+    expect(h[0]).toBe(0);
+    expect(h[10]).toBeCloseTo(0.9, 6);
+    for (let i = 1; i < h.length; i++) expect(h[i]).toBeGreaterThan(h[i - 1]);
+  });
+
+  it('colour effect Brightness is interpolated (written as Adjustments brightness)', async () => {
+    const { out } = await convert(tweenDoc(colorFx('brightness="0"'), colorFx('brightness="0.6"')));
+    const fr = await effectsPerFrame(out.bytes);
+    const b = fr.map((f) => (f.fx[0] as { b?: number } | undefined)?.b ?? 0);
+    expect(b[0]).toBe(0);
+    expect(b[10]).toBeCloseTo(0.6, 6);
+    for (let i = 1; i < b.length; i++) expect(b[i]).toBeGreaterThan(b[i - 1]);
+    expect(find(out.report.diagnostics, 'TWEEN_FX_BAKED')[0].locations[0].source).toBe('Brightness 0% → 60%');
+  });
+
+  it('an Alpha-only change is interpolated as opacity and not reported as a colour/filter tween', async () => {
+    const { out } = await convert(tweenDoc('', colorFx('alphaMultiplier="0"')));
+    const op = (await effectsPerFrame(out.bytes)).map((f) => f.op);
+    expect(op[0]).toBe(1);
+    expect(op[10]).toBe(0);
+    for (let i = 1; i < op.length; i++) expect(op[i]).toBeLessThan(op[i - 1]);
+    for (const c of ['TWEEN_FX_BAKED', 'TWEEN_COLOR_FILTER']) expect(find(out.report.diagnostics, c)).toEqual([]);
+  });
+
+  it('a Tint change cannot be shown at all: reported, nothing baked', async () => {
+    const { out } = await convert(tweenDoc(colorFx('tintMultiplier="0.5" tintColor="#FF0000"'), colorFx('tintMultiplier="0.5" tintColor="#0000FF"')));
+    const d = find(out.report.diagnostics, 'TWEEN_COLOR_FILTER');
+    expect(d).toHaveLength(1);
+    expect(d[0].message).toMatch(/Tint/);
+    expect(d[0].locations[0].source).toBe('Tint 50% #FF0000 → 50% #0000FF');
+    expect(find(out.report.diagnostics, 'FX_NO_EQUIVALENT').length).toBeGreaterThan(0);
+    expect(find(out.report.diagnostics, 'TWEEN_FX_BAKED')).toEqual([]);
+  });
+
+  it('filters that differ in kind keep the start filters and say so', async () => {
+    const { out } = await convert(tweenDoc(blurF(10, 10), adjF(50, 0, 0, 0)));
+    const fr = await effectsPerFrame(out.bytes);
+    expect(fr.slice(0, 10).every((f) => JSON.stringify(f.fx) === JSON.stringify(fr[0].fx))).toBe(true);
+    const d = find(out.report.diagnostics, 'TWEEN_COLOR_FILTER');
+    expect(d[0].locations[0].source).toBe('[blur] → [adjustColor]');
+  });
+
+  it('a blend mode change is held at the start keyframe and reported', async () => {
+    const { out } = await convert(tweenDoc('', '', 'blendMode="multiply"', 'blendMode="screen"'));
+    const d = find(out.report.diagnostics, 'TWEEN_BLEND_HELD');
+    expect(d[0].locations[0].source).toBe('blendMode "multiply" → "screen"');
+    const scene = (await readBack(out.bytes)).get('Scene 1')!;
+    const bms = contents(scene, timelineLayers(scene)[0].id).map((c) => c.d.bM);
+    expect(bms.slice(0, 10).every((b) => b === 3)).toBe(true);   // Multiply (bM 3) until the end keyframe
+    expect(bms[10]).toBe(8);                                       // Screen at the end keyframe
+  });
+});
